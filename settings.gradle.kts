@@ -19,7 +19,8 @@ val allProjects = listOf(
         "rewrite-java",
         "rewrite-java-tck",
         "rewrite-java-test",
-        "rewrite-java-17",
+        "rewrite-java-17", // remove this when rewrite recipe gradle plugin moves to 21
+        "rewrite-java-21",
         "rewrite-json",
         "rewrite-maven",
         "rewrite-properties",
@@ -30,7 +31,7 @@ val allProjects = listOf(
 )
 
 val includedProjects = file("IDE.properties").let {
-    if (it.exists()) {
+    if (it.exists() && (System.getProperty("idea.active") != null || System.getProperty("idea.sync.active") != null)) {
         val props = java.util.Properties()
         it.reader().use { reader ->
             props.load(reader)
@@ -71,7 +72,9 @@ if (System.getProperty("idea.active") == null &&
         System.getProperty("idea.sync.active") == null) {
     include(
             "rewrite-java-8",
-            "rewrite-java-11"
+            "rewrite-java-11",
+            "rewrite-java-17",
+            "rewrite-java-21"
     )
 }
 
@@ -80,26 +83,19 @@ if (System.getProperty("idea.active") == null &&
 // ---------------------------------------------------------------
 
 plugins {
-    id("com.gradle.enterprise") version "3.11"
+    id("com.gradle.enterprise") version "latest.release"
     id("com.gradle.common-custom-user-data-gradle-plugin") version "latest.release"
 }
 
 gradleEnterprise {
     val isCiServer = System.getenv("CI")?.equals("true") ?: false
     server = "https://ge.openrewrite.org/"
-    val gradleCacheRemoteUsername: String? = System.getenv("GRADLE_ENTERPRISE_CACHE_USERNAME")
-    val gradleCacheRemotePassword: String? = System.getenv("GRADLE_ENTERPRISE_CACHE_PASSWORD")
 
     buildCache {
-        remote(HttpBuildCache::class) {
-            url = uri("https://ge.openrewrite.org/cache/")
-            isPush = isCiServer
-            if (!gradleCacheRemoteUsername.isNullOrBlank() && !gradleCacheRemotePassword.isNullOrBlank()) {
-                credentials {
-                    username = gradleCacheRemoteUsername
-                    password = gradleCacheRemotePassword
-                }
-            }
+        remote(gradleEnterprise.buildCache) {
+            isEnabled = true
+            val accessKey = System.getenv("GRADLE_ENTERPRISE_ACCESS_KEY")
+            isPush = isCiServer && !accessKey.isNullOrBlank()
         }
     }
 

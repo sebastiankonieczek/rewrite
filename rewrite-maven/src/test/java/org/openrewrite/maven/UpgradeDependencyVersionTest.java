@@ -23,9 +23,14 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.openrewrite.DocumentExample;
 import org.openrewrite.Issue;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.test.SourceSpec;
 
 import java.util.Collections;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.maven.Assertions.pomXml;
 
@@ -270,28 +275,13 @@ class UpgradeDependencyVersionTest implements RewriteTest {
                           <dependency>
                               <groupId>com.google.guava</groupId>
                               <artifactId>guava</artifactId>
-                              <version>13.0.1</version>
+                              <version>13.0</version>
                           </dependency>
                       </dependencies>
                   </dependencyManagement>
               </project>
               """,
-            """
-              <project>
-                  <groupId>com.mycompany</groupId>
-                  <artifactId>my-parent</artifactId>
-                  <version>1</version>
-                  <dependencyManagement>
-                      <dependencies>
-                          <dependency>
-                              <groupId>com.google.guava</groupId>
-                              <artifactId>guava</artifactId>
-                              <version>14.0</version>
-                          </dependency>
-                      </dependencies>
-                  </dependencyManagement>
-              </project>
-              """
+            SourceSpec::skip
           ),
           mavenProject("my-child",
             pomXml(
@@ -513,6 +503,127 @@ class UpgradeDependencyVersionTest implements RewriteTest {
                     <version>28.0-android</version>
                   </dependency>
                 </dependencies>
+              </project>
+              """
+          )
+        );
+    }
+
+    @Test
+    void upgradePluginDependencies() {
+        rewriteRun(
+          spec -> spec.recipe(new UpgradeDependencyVersion("org.openrewrite.recipe", "rewrite-spring", "5.0.6", "", null, null)),
+          pomXml(
+            """
+              <project>
+                <groupId>com.mycompany.app</groupId>
+                <artifactId>my-app</artifactId>
+                <version>1</version>
+                <build>
+                  <plugins>
+                    <plugin>
+                      <groupId>org.openrewrite.maven</groupId>
+                      <artifactId>rewrite-maven-plugin</artifactId>
+                      <version>5.4.1</version>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.openrewrite.recipe</groupId>
+                          <artifactId>rewrite-spring</artifactId>
+                          <version>5.0.5</version>
+                        </dependency>
+                      </dependencies>
+                    </plugin>
+                  </plugins>
+                </build>
+              </project>
+              """,
+            """
+              <project>
+                <groupId>com.mycompany.app</groupId>
+                <artifactId>my-app</artifactId>
+                <version>1</version>
+                <build>
+                  <plugins>
+                    <plugin>
+                      <groupId>org.openrewrite.maven</groupId>
+                      <artifactId>rewrite-maven-plugin</artifactId>
+                      <version>5.4.1</version>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.openrewrite.recipe</groupId>
+                          <artifactId>rewrite-spring</artifactId>
+                          <version>5.0.6</version>
+                        </dependency>
+                      </dependencies>
+                    </plugin>
+                  </plugins>
+                </build>
+              </project>
+              """
+          )
+        );
+    }
+
+    @Test
+    void upgradePluginDependenciesOnProperty() {
+        rewriteRun(
+          // Using latest.patch to validate the version property resolution, since it's needed for matching the valid patch.
+          spec -> spec.recipe(new UpgradeDependencyVersion("org.openrewrite.recipe", "rewrite-spring", "latest.patch", "", null, null)),
+          pomXml(
+            """
+              <project>
+                <groupId>com.mycompany.app</groupId>
+                <artifactId>my-app</artifactId>
+                <version>1</version>
+                
+                <properties>
+                    <rewrite-spring.version>4.33.0</rewrite-spring.version>
+                </properties>
+                
+                <build>
+                  <plugins>
+                    <plugin>
+                      <groupId>org.openrewrite.maven</groupId>
+                      <artifactId>rewrite-maven-plugin</artifactId>
+                      <version>5.4.1</version>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.openrewrite.recipe</groupId>
+                          <artifactId>rewrite-spring</artifactId>
+                          <version>${rewrite-spring.version}</version>
+                        </dependency>
+                      </dependencies>
+                    </plugin>
+                  </plugins>
+                </build>
+              </project>
+              """,
+            """
+              <project>
+                <groupId>com.mycompany.app</groupId>
+                <artifactId>my-app</artifactId>
+                <version>1</version>
+                
+                <properties>
+                    <rewrite-spring.version>4.33.2</rewrite-spring.version>
+                </properties>
+                
+                <build>
+                  <plugins>
+                    <plugin>
+                      <groupId>org.openrewrite.maven</groupId>
+                      <artifactId>rewrite-maven-plugin</artifactId>
+                      <version>5.4.1</version>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.openrewrite.recipe</groupId>
+                          <artifactId>rewrite-spring</artifactId>
+                          <version>${rewrite-spring.version}</version>
+                        </dependency>
+                      </dependencies>
+                    </plugin>
+                  </plugins>
+                </build>
               </project>
               """
           )
@@ -824,35 +935,41 @@ class UpgradeDependencyVersionTest implements RewriteTest {
                   </dependencies>
               </project>
               """,
-            """
-              <project>
-                  <groupId>org.openrewrite.example</groupId>
-                  <artifactId>my-app-server</artifactId>
-                  <version>1</version>
-                  <properties>
-                      <guava.version>28.0-jre</guava.version>
-                      <spring.version>5.3.27</spring.version>
-                      <spring.artifact-id>spring-jdbc</spring.artifact-id>
-                  </properties>
-                  <dependencies>
-                      <dependency>
-                          <groupId>com.google.guava</groupId>
-                          <artifactId>guava</artifactId>
-                          <version>${guava.version}</version>
-                      </dependency>
-                      <dependency>
-                          <groupId>org.springframework</groupId>
-                          <artifactId>${spring.artifact-id}</artifactId>
-                          <version>${spring.version}</version>
-                      </dependency>
-                      <dependency>
-                          <groupId>com.fasterxml.jackson.core</groupId>
-                          <artifactId>jackson-core</artifactId>
-                          <version>2.13.5</version>
-                      </dependency>
-                  </dependencies>
-              </project>
-              """
+            spec -> spec.after(after -> {
+                Matcher matcher = Pattern.compile("<spring\\.version>(.+)</spring\\.version>").matcher(after);
+                assertTrue(matcher.find());
+                String springVersion = matcher.group(1);
+                assertNotEquals("5.3.4", springVersion);
+                return """
+                  <project>
+                      <groupId>org.openrewrite.example</groupId>
+                      <artifactId>my-app-server</artifactId>
+                      <version>1</version>
+                      <properties>
+                          <guava.version>28.0-jre</guava.version>
+                          <spring.version>%s</spring.version>
+                          <spring.artifact-id>spring-jdbc</spring.artifact-id>
+                      </properties>
+                      <dependencies>
+                          <dependency>
+                              <groupId>com.google.guava</groupId>
+                              <artifactId>guava</artifactId>
+                              <version>${guava.version}</version>
+                          </dependency>
+                          <dependency>
+                              <groupId>org.springframework</groupId>
+                              <artifactId>${spring.artifact-id}</artifactId>
+                              <version>${spring.version}</version>
+                          </dependency>
+                          <dependency>
+                              <groupId>com.fasterxml.jackson.core</groupId>
+                              <artifactId>jackson-core</artifactId>
+                              <version>2.13.5</version>
+                          </dependency>
+                      </dependencies>
+                  </project>
+                  """.formatted(springVersion);
+            })
           )
         );
     }
@@ -1280,185 +1397,197 @@ class UpgradeDependencyVersionTest implements RewriteTest {
         @Test
         void dependencyWithExplicitVersionRemovedFromDepMgmt() {
             rewriteRun(spec -> spec.recipe(new UpgradeDependencyVersion("org.springframework.cloud", "spring-cloud-config-dependencies", "3.1.4", null, true, Collections.singletonList("com.jcraft:jsch"))),
-              pomXml("""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+              pomXml(
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.2</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.2</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
+                        <version>0.1.55</version>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                      <version>0.1.55</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """, """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+                  </project>
+                  """,
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.4</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.4</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
+                        <version>0.1.55</version>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                      <version>0.1.55</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """));
+                  </project>
+                  """
+              )
+            );
         }
 
         @Test
         void dependencyWithoutExplicitVersionRemovedFromDepMgmt() {
             rewriteRun(spec -> spec.recipe(new UpgradeDependencyVersion("org.springframework.cloud", "spring-cloud-config-dependencies", "3.1.4", null, true, Collections.singletonList("com.jcraft:jsch"))),
-              pomXml("""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+              pomXml(
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.2</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.2</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """, """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+                  </project>
+                  """,
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.4</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.4</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
+                        <version>0.1.55</version>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                      <version>0.1.55</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """));
+                  </project>
+                  """
+              )
+            );
         }
 
         @Test
         void dependencyWithoutExplicitVersionRemovedFromDepMgmtRetainSpecificVersion() {
             rewriteRun(spec -> spec.recipe(new UpgradeDependencyVersion("org.springframework.cloud", "spring-cloud-config-dependencies", "3.1.4", null, true, Collections.singletonList("com.jcraft:jsch:0.1.50"))),
-              pomXml("""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+              pomXml(
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.2</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.2</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """, """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+                  </project>
+                  """,
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-config-dependencies</artifactId>
+                          <version>3.1.4</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-config-dependencies</artifactId>
-                        <version>3.1.4</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
+                        <version>0.1.50</version>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                      <version>0.1.50</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """));
+                  </project>
+                  """
+              )
+            );
         }
 
         @Test
@@ -1467,71 +1596,75 @@ class UpgradeDependencyVersionTest implements RewriteTest {
                 new UpgradeDependencyVersion("org.springframework.cloud", "spring-cloud-dependencies", "2021.0.5", null,
                   true,
                   Lists.newArrayList("com.jcraft:jsch", "org.springframework.cloud:spring-cloud-schema-registry-*:1.1.1"))),
-              pomXml("""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
+              pomXml(
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-dependencies</artifactId>
+                          <version>2020.0.1</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
                     <dependencies>
                       <dependency>
-                        <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-dependencies</artifactId>
-                        <version>2020.0.1</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
                       </dependency>
-                    </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                    </dependency>
-                    <dependency>
-                      <groupId>org.springframework.cloud</groupId>
-                      <artifactId>spring-cloud-schema-registry-core</artifactId>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """, """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-                  <modelVersion>4.0.0</modelVersion>
-                  <groupId>org.sample</groupId>
-                  <artifactId>sample</artifactId>
-                  <version>1.0.0</version>
-                  
-                  <dependencyManagement>
-                    <dependencies>
                       <dependency>
                         <groupId>org.springframework.cloud</groupId>
-                        <artifactId>spring-cloud-dependencies</artifactId>
-                        <version>2021.0.5</version>
-                        <type>pom</type>
-                        <scope>import</scope>
+                        <artifactId>spring-cloud-schema-registry-core</artifactId>
                       </dependency>
                     </dependencies>
-                  </dependencyManagement>
-                  
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.jcraft</groupId>
-                      <artifactId>jsch</artifactId>
-                      <version>0.1.55</version>
-                    </dependency>
-                    <dependency>
-                      <groupId>org.springframework.cloud</groupId>
-                      <artifactId>spring-cloud-schema-registry-core</artifactId>
-                      <version>1.1.1</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """));
+                  </project>
+                  """,
+                """
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>org.sample</groupId>
+                    <artifactId>sample</artifactId>
+                    <version>1.0.0</version>
+                    
+                    <dependencyManagement>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.springframework.cloud</groupId>
+                          <artifactId>spring-cloud-dependencies</artifactId>
+                          <version>2021.0.5</version>
+                          <type>pom</type>
+                          <scope>import</scope>
+                        </dependency>
+                      </dependencies>
+                    </dependencyManagement>
+                    
+                    <dependencies>
+                      <dependency>
+                        <groupId>com.jcraft</groupId>
+                        <artifactId>jsch</artifactId>
+                        <version>0.1.55</version>
+                      </dependency>
+                      <dependency>
+                        <groupId>org.springframework.cloud</groupId>
+                        <artifactId>spring-cloud-schema-registry-core</artifactId>
+                        <version>1.1.1</version>
+                      </dependency>
+                    </dependencies>
+                  </project>
+                  """
+              )
+            );
         }
     }
 }

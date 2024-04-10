@@ -32,6 +32,7 @@ import org.openrewrite.marker.Markers;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.openrewrite.Tree.randomId;
@@ -54,8 +55,8 @@ public class DependencyUseStringNotation extends Recipe {
         final MethodMatcher dependencyDsl = new MethodMatcher("DependencyHandlerSpec *(..)");
         return Preconditions.check(new IsBuildGradle<>(), new GroovyVisitor<ExecutionContext>() {
             @Override
-            public J visitMethodInvocation(J.MethodInvocation method, ExecutionContext context) {
-                J.MethodInvocation m = (J.MethodInvocation) super.visitMethodInvocation(method, context);
+            public J visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
+                J.MethodInvocation m = (J.MethodInvocation) super.visitMethodInvocation(method, ctx);
                 if (!dependencyDsl.matches(m)) {
                     return m;
                 }
@@ -153,6 +154,21 @@ public class DependencyUseStringNotation extends Recipe {
                     return (String) ((J.Literal) expression).getValue();
                 } else if (expression instanceof J.Identifier) {
                     return "$" + ((J.Identifier) expression).getSimpleName();
+                } else if (expression instanceof G.GString) {
+                    List<J> str = ((G.GString) expression).getStrings();
+                    StringBuilder sb = new StringBuilder();
+                    for (J valuePart : str) {
+                        if (valuePart instanceof Expression) {
+                            sb.append(coerceToStringNotation((Expression) valuePart));
+                        } else if (valuePart instanceof G.GString.Value) {
+                            J tree = ((G.GString.Value) valuePart).getTree();
+                            if (tree instanceof Expression) {
+                                sb.append(coerceToStringNotation((Expression) tree));
+                            }
+                            //Can it be something else? If so, what?
+                        }
+                    }
+                    return sb.toString();
                 }
                 return null;
             }

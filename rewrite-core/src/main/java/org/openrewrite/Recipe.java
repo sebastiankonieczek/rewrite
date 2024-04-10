@@ -16,6 +16,7 @@
 package org.openrewrite;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import lombok.Setter;
 import org.intellij.lang.annotations.Language;
@@ -24,13 +25,12 @@ import org.openrewrite.config.OptionDescriptor;
 import org.openrewrite.config.RecipeDescriptor;
 import org.openrewrite.config.RecipeExample;
 import org.openrewrite.internal.ListUtils;
+import org.openrewrite.internal.StringUtils;
 import org.openrewrite.internal.lang.NullUtils;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.table.RecipeRunStats;
 import org.openrewrite.table.SourcesFileErrors;
 import org.openrewrite.table.SourcesFileResults;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -54,23 +54,15 @@ import static org.openrewrite.internal.RecipeIntrospectionUtils.dataTableDescrip
  * returns a list of {@link Result results} for each modified {@link SourceFile}
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@c")
+@JsonPropertyOrder({"@c"}) // serialize type info first
 public abstract class Recipe implements Cloneable {
     public static final String PANIC = "__AHHH_PANIC!!!__";
-
-    private static final Logger logger = LoggerFactory.getLogger(Recipe.class);
 
     @SuppressWarnings("unused")
     @JsonProperty("@c")
     public String getJacksonPolymorphicTypeTag() {
         return getClass().getName();
     }
-
-    public static final TreeVisitor<?, ExecutionContext> NOOP = new TreeVisitor<Tree, ExecutionContext>() {
-        @Override
-        public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
-            return tree;
-        }
-    };
 
     private transient RecipeDescriptor descriptor;
 
@@ -90,11 +82,6 @@ public abstract class Recipe implements Cloneable {
         @Override
         public String getDescription() {
             return "Default no-op test, does nothing.";
-        }
-
-        @Override
-        public TreeVisitor<?, ExecutionContext> getVisitor() {
-            return NOOP;
         }
     }
 
@@ -117,6 +104,68 @@ public abstract class Recipe implements Cloneable {
      */
     @Language("markdown")
     public abstract String getDisplayName();
+
+    /**
+     * A human-readable display name for this recipe instance, including some descriptive
+     * text about the recipe options that are supplied, if any. The name must be
+     * initial capped with no period. For example, "Find text 'hello world'".
+     * <br/>
+     * For recipes with no options, by default this is equal to {@link #getDisplayName()}. For
+     * recipes with options, the default implementation does its best to summarize those options
+     * in a way that fits in a reasonable amount of characters.
+     * <br/>
+     * For consistency, when surrounding option descriptive text in quotes to visually differentiate
+     * it from the text before it, use single ``.
+     * <br/>
+     * Override to provide meaningful recipe instance names for recipes with complex sets of options.
+     *
+     * @return A name that describes this recipe instance.
+     */
+    @Incubating(since = "8.12.0")
+    @Language("markdown")
+    public String getInstanceName() {
+        @Language("markdown")
+        String suffix = getInstanceNameSuffix();
+        if (!StringUtils.isBlank(suffix)) {
+            return getDisplayName() + " " + suffix;
+        }
+
+        List<OptionDescriptor> options = new ArrayList<>(getOptionDescriptors(getClass()));
+        options.removeIf(opt -> !opt.isRequired());
+        if (options.isEmpty()) {
+            return getDisplayName();
+        }
+        if (options.size() == 1) {
+            try {
+                OptionDescriptor option = options.get(0);
+                String name = option.getName();
+                Field optionField = getClass().getDeclaredField(name);
+                optionField.setAccessible(true);
+                Object optionValue = optionField.get(this);
+                if (optionValue != null &&
+                    !Iterable.class.isAssignableFrom(optionValue.getClass()) &&
+                    !optionValue.getClass().isArray()) {
+                    return String.format("%s `%s`", getDisplayName(), optionValue);
+                }
+            } catch (NoSuchFieldException | IllegalAccessException ignore) {
+                // we tried...
+            }
+        }
+        return getDisplayName();
+    }
+
+    /**
+     * Since most instance names will be constructed with {@link #getDisplayName()} followed
+     * by some further descriptive text about the recipe's options, this method provides a convenient
+     * way to just specify the option descriptive text. When {@link #getInstanceName()} is overridden,
+     * this method has no effect. Generally either override this method or {@link #getInstanceName()}
+     * if you want to customize the instance name text.
+     *
+     * @return A suffix to append to the display name of a recipe.
+     */
+    public String getInstanceNameSuffix() {
+        return "";
+    }
 
     /**
      * A human-readable description for the recipe, consisting of one or more full
@@ -269,7 +318,7 @@ public abstract class Recipe implements Cloneable {
      * @return A tree visitor that will perform operations associated with the recipe.
      */
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        return NOOP;
+        return TreeVisitor.noop();
     }
 
     public void addDataTable(DataTable<?> dataTable) {
@@ -291,6 +340,7 @@ public abstract class Recipe implements Cloneable {
         return new RecipeScheduler().scheduleRun(this, before, ctx, maxCycles, minCycles);
     }
 
+    @SuppressWarnings("unused")
     public Validated<Object> validate(ExecutionContext ctx) {
         Validated<Object> validated = validate();
 
@@ -309,12 +359,13 @@ public abstract class Recipe implements Cloneable {
      */
     public Validated<Object> validate() {
         Validated<Object> validated = Validated.none();
-        List<Field> requiredFields = NullUtils.findNonNullFields(this.getClass());
+        Class<? extends Recipe> clazz = this.getClass();
+        List<Field> requiredFields = NullUtils.findNonNullFields(clazz);
         for (Field field : requiredFields) {
             try {
-                validated = validated.and(Validated.required(field.getName(), field.get(this)));
+                validated = validated.and(Validated.required(clazz.getSimpleName() + '.' + field.getName(), field.get(this)));
             } catch (IllegalAccessException e) {
-                logger.warn("Unable to validate the field [{}] on the class [{}]", field.getName(), this.getClass().getName());
+                validated = Validated.invalid(field.getName(), null, "Unable to access " + clazz.getName() + "." + field.getName(), e);
             }
         }
         for (Recipe recipe : getRecipeList()) {
@@ -327,7 +378,7 @@ public abstract class Recipe implements Cloneable {
         return validateAll(new InMemoryExecutionContext(), new ArrayList<>());
     }
 
-    private Collection<Validated<Object>> validateAll(ExecutionContext ctx, Collection<Validated<Object>> acc) {
+    public Collection<Validated<Object>> validateAll(ExecutionContext ctx, Collection<Validated<Object>> acc) {
         acc.add(validate(ctx));
         for (Recipe recipe : getRecipeList()) {
             recipe.validateAll(ctx, acc);

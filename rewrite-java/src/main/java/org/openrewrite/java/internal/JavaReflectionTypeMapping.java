@@ -23,10 +23,8 @@ import org.openrewrite.java.tree.JavaType;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static java.util.Collections.emptyList;
 import static org.openrewrite.java.tree.JavaType.GenericTypeVariable.Variance.*;
@@ -79,16 +77,16 @@ public class JavaReflectionTypeMapping implements JavaTypeMapping<Type> {
     }
 
     private JavaType.Array array(Class<?> clazz, String signature) {
-        JavaType.Array arr = new JavaType.Array(null, null);
+        JavaType.Array arr = new JavaType.Array(null, null, null);
         typeCache.put(signature, arr);
-        arr.unsafeSet(type(clazz.getComponentType()));
+        arr.unsafeSet(type(clazz.getComponentType()), null);
         return arr;
     }
 
     private JavaType.Array array(GenericArrayType type, String signature) {
-        JavaType.Array arr = new JavaType.Array(null, null);
+        JavaType.Array arr = new JavaType.Array(null, null, null);
         typeCache.put(signature, arr);
-        arr.unsafeSet(type(type.getGenericComponentType()));
+        arr.unsafeSet(type(type.getGenericComponentType()), null);
         return arr;
     }
 
@@ -325,12 +323,14 @@ public class JavaReflectionTypeMapping implements JavaTypeMapping<Type> {
             return existing;
         }
 
-        List<String> paramNames = null;
+        String[] paramNames = null;
         if (method.getParameters().length > 0) {
-            paramNames = new ArrayList<>(method.getParameters().length);
-            for (Parameter p : method.getParameters()) {
+            paramNames = new String[method.getParameters().length];
+            Parameter[] parameters = method.getParameters();
+            for (int i = 0; i < parameters.length; i++) {
+                Parameter p = parameters[i];
                 if (!p.isSynthetic()) {
-                    paramNames.add(p.getName());
+                    paramNames[i] = p.getName();
                 }
             }
         }
@@ -387,20 +387,55 @@ public class JavaReflectionTypeMapping implements JavaTypeMapping<Type> {
             return existing;
         }
 
-        List<String> paramNames = null;
+        String[] paramNames = null;
         if (method.getParameters().length > 0) {
-            paramNames = new ArrayList<>(method.getParameters().length);
-            for (Parameter p : method.getParameters()) {
-                paramNames.add(p.getName());
+            paramNames = new String[method.getParameters().length];
+            Parameter[] parameters = method.getParameters();
+            for (int i = 0; i < parameters.length; i++) {
+                Parameter p = parameters[i];
+                paramNames[i] = p.getName();
             }
         }
 
         List<String> defaultValues = null;
-        if(method.getDefaultValue() != null) {
-            if(method.getDefaultValue().getClass().isArray()) {
-                defaultValues = Arrays.stream((Object[])method.getDefaultValue())
-                        .map(Object::toString)
-                        .collect(Collectors.toList());
+        if (method.getDefaultValue() != null) {
+            Class<?> valueClass = method.getDefaultValue().getClass();
+            if (valueClass.isArray()) {
+                defaultValues = new ArrayList<>();
+                Class<?> elementType = valueClass.getComponentType();
+                if (elementType == int.class) {
+                    for (int v : ((int[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == long.class) {
+                    for (long v : ((long[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == byte.class) {
+                    for (byte v : ((byte[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == boolean.class) {
+                    for (boolean v : ((boolean[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == short.class) {
+                    for (short v : ((short[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == double.class) {
+                    for (double v : ((double[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else if (elementType == float.class) {
+                    for (float v : ((float[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                } else {
+                    for (Object v : ((Object[]) method.getDefaultValue())) {
+                        defaultValues.add(String.valueOf(v));
+                    }
+                }
             } else {
                 defaultValues = Collections.singletonList(method.getDefaultValue().toString());
             }

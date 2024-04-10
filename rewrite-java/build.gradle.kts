@@ -2,6 +2,10 @@ plugins {
     id("org.openrewrite.build.language-library")
 }
 
+val antlrGeneration by configurations.creating {
+    extendsFrom(configurations.implementation.get())
+}
+
 tasks.register<JavaExec>("generateAntlrSources") {
     mainClass.set("org.antlr.v4.Tool")
 
@@ -11,17 +15,19 @@ tasks.register<JavaExec>("generateAntlrSources") {
             "-visitor"
     ) + fileTree("src/main/antlr").matching { include("**/*.g4") }.map { it.path }
 
-    classpath = sourceSets["main"].runtimeClasspath
+    classpath = antlrGeneration
 }
 
 dependencies {
     api(project(":rewrite-core"))
     api(project(":rewrite-yaml"))
+    api(project(":rewrite-xml"))
 
     api("io.micrometer:micrometer-core:1.9.+")
     api("org.jetbrains:annotations:latest.release")
 
-    implementation("org.antlr:antlr4:4.11.1")
+    antlrGeneration("org.antlr:antlr4:4.11.1")
+    implementation("org.antlr:antlr4-runtime:4.11.1")
     compileOnly("com.puppycrawl.tools:checkstyle:9.+") { // Pinned to 9.+ because 10.x does not support Java 8: https://checkstyle.sourceforge.io/#JRE_and_JDK
         isTransitive = false
     }
@@ -32,7 +38,7 @@ dependencies {
     implementation("org.apache.commons:commons-text:latest.release")
     implementation("io.github.classgraph:classgraph:latest.release")
 
-    implementation("org.xerial.snappy:snappy-java:1.1.8.4")
+    implementation("org.xerial.snappy:snappy-java:1.1.10.+")
 
     api("com.fasterxml.jackson.core:jackson-annotations")
 
@@ -68,5 +74,5 @@ tasks.withType<Javadoc> {
     //   symbol:   method onConstructor_()
     //   location: @interface AllArgsConstructor
     // 1 error
-    exclude("**/JavaParser**", "**/ChangeMethodTargetToStatic**")
+    exclude("**/JavaParser**", "**/ChangeMethodTargetToStatic**", "**/J.java")
 }

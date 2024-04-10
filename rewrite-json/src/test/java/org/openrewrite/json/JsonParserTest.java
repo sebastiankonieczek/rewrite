@@ -24,7 +24,7 @@ import org.openrewrite.test.RewriteTest;
 import static org.openrewrite.json.Assertions.json;
 
 @SuppressWarnings({"JsonStandardCompliance", "JsonDuplicatePropertyKeys"})
-public class JsonParserTest implements RewriteTest {
+class JsonParserTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -69,7 +69,21 @@ public class JsonParserTest implements RewriteTest {
     @Test
     void doubleLiteralExpSigned() {
         rewriteRun(
-          json("-1.e3")
+          json("-1e3")
+        );
+    }
+
+    @Test
+    void doubleLiteralExpSignedUpperCase() {
+        rewriteRun(
+          json("1E-3")
+        );
+    }
+
+    @Test
+    void bigInteger() {
+        rewriteRun(
+          json("-10000000000000000999")
         );
     }
 
@@ -130,6 +144,36 @@ public class JsonParserTest implements RewriteTest {
     void empty() {
         rewriteRun(
           json("")
+        );
+    }
+
+    @Issue("https://github.com/openrewrite/rewrite/issues/3582")
+    @Test
+    void multiBytesUnicode() {
+        rewriteRun(
+          json(
+            """
+              {
+                "🤖"    : "robot",
+                "robot" : "🤖",
+                "நடித்த" : 3 /* 🇩🇪 */
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void unicodeEscapes() {
+        rewriteRun(
+          json(
+            """
+              {
+                "nul": "\\u0000",
+                "reverse-solidus": "\\u005c",
+              }
+              """
+          )
         );
     }
 }

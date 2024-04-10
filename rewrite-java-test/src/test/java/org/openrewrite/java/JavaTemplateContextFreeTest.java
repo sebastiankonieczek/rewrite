@@ -39,7 +39,8 @@ class JavaTemplateContextFreeTest implements RewriteTest {
           spec -> spec.recipe(toRecipe(() -> new JavaVisitor<>() {
               @Override
               public J visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                  return method.getBody() != null && JavaTemplate.matches("System.out.println(1);", new Cursor(getCursor(), method.getBody())) ?
+                  return method.getBody() != null && JavaTemplate.matches("System.out.println(1);",
+                    new Cursor(new Cursor(getCursor(), method.getBody()), method.getBody().getStatements().get(0))) ?
                     JavaTemplate.apply("System.out.println(2);", getCursor(), method.getCoordinates().replaceBody()) :
                     super.visitMethodDeclaration(method, ctx);
               }
@@ -56,6 +57,44 @@ class JavaTemplateContextFreeTest implements RewriteTest {
               class Test {
                   void m() {
                       System.out.println(2);
+                  }
+              }
+              """
+          ));
+    }
+
+    @Test
+    void replaceField() {
+        rewriteRun(
+          spec -> spec.recipe(toRecipe(() -> new JavaVisitor<>() {
+              @Override
+              public J visitVariableDeclarations(J.VariableDeclarations vd, ExecutionContext ctx) {
+                  if (vd.getVariables().size() == 1 && vd.getVariables().get(0).getSimpleName().equals("i")) {
+                      return JavaTemplate.apply("Integer i = 2;", getCursor(), vd.getCoordinates().replace());
+                  }
+                  return super.visitVariableDeclarations(vd, ctx);
+              }
+          }).withMaxCycles(1)),
+          java(
+            """
+              class Test {
+                  private Integer i = 1;
+                  void m() {
+                      Integer i = 1;
+                      Object o = new Object() {
+                          private final Integer i = 1;
+                      };
+                  }
+              }
+              """,
+            """
+              class Test {
+                  Integer i = 2;
+                  void m() {
+                      Integer i = 2;
+                      Object o = new Object() {
+                          Integer i = 2;
+                      };
                   }
               }
               """

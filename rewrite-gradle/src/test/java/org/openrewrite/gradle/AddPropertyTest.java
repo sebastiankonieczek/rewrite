@@ -20,15 +20,14 @@ import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
 
 import static org.openrewrite.gradle.Assertions.buildGradle;
-import static org.openrewrite.gradle.Assertions.withToolingApi;
 import static org.openrewrite.properties.Assertions.properties;
+import static org.openrewrite.test.SourceSpecs.dir;
 
 class AddPropertyTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
-        spec.beforeRecipe(withToolingApi())
-          .recipe(new AddProperty("org.gradle.caching", "true", true));
+        spec.recipe(new AddProperty("org.gradle.caching", "true", true, null));
     }
 
     @Test
@@ -36,12 +35,14 @@ class AddPropertyTest implements RewriteTest {
         rewriteRun(
           buildGradle("plugins { id 'java' }"),
           properties(
+            //language=properties
             """
               project.name=helloworld
               """,
+            //language=properties
             """
-              project.name=helloworld
               org.gradle.caching=true
+              project.name=helloworld
               """,
             spec -> spec.path("gradle.properties")
           )
@@ -53,10 +54,12 @@ class AddPropertyTest implements RewriteTest {
         rewriteRun(
           buildGradle("plugins { id 'java' }"),
           properties(
+            //language=properties
             """
               project.name=helloworld
               org.gradle.caching=false
               """,
+            //language=properties
             """
               project.name=helloworld
               org.gradle.caching=true
@@ -72,10 +75,39 @@ class AddPropertyTest implements RewriteTest {
           buildGradle("plugins { id 'java' }"),
           properties(
             null,
+            //language=properties
             """
               org.gradle.caching=true
               """,
             spec -> spec.path("gradle.properties")
+          )
+        );
+    }
+
+    @Test
+    void addOnlyToSpecifiedFilePattern() {
+        rewriteRun(
+          spec -> spec.recipe(new AddProperty("org.gradle.caching", "true", null, "gradle.properties")),
+          buildGradle("plugins { id 'java' }"),
+          properties(
+            "",
+            //language=properties
+            """
+              org.gradle.caching=true
+              """,
+            spec -> spec.path("gradle.properties")
+          ),
+          dir("project1",
+            properties(
+              "",
+              spec -> spec.path("gradle.properties")
+            )
+          ),
+          dir("project2",
+            properties(
+              "",
+              spec -> spec.path("gradle.properties")
+            )
           )
         );
     }

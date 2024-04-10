@@ -15,7 +15,9 @@
  */
 package org.openrewrite.java.style;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junitpioneer.jupiter.ExpectedToFail;
 import org.openrewrite.Issue;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.style.GeneralFormatStyle;
@@ -25,11 +27,80 @@ import org.openrewrite.test.RewriteTest;
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SuppressWarnings({"ConstantConditions", "ResultOfMethodCallIgnored"})
+@SuppressWarnings({"ConstantConditions", "ResultOfMethodCallIgnored", "PointlessBooleanExpression"})
 class AutodetectTest implements RewriteTest {
 
     private static JavaParser jp() {
         return JavaParser.fromJavaVersion().build();
+    }
+
+    @Test
+    void continuationIndent() {
+        var cus = jp().parse(
+          """
+            class Test {
+            	boolean eq(){
+            		return (1 == 1 &&
+            				2 == 2 &&
+            				3 == 3);
+            	}
+            }
+            """
+        );
+
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
+        var styles = detector.build();
+        var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+        assertThat(tabsAndIndents.getUseTabCharacter()).isTrue();
+        assertThat(tabsAndIndents.getTabSize()).isEqualTo(4);
+        assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
+        assertThat(tabsAndIndents.getContinuationIndent()).isEqualTo(8);
+    }
+
+    @Test
+    @Issue("https://github.com/openrewrite/rewrite/issues/3552")
+    void continuationIndentFromParameters() {
+        var cus = jp().parse(
+          """
+            class Test {
+               void foo(String s1,
+                    String s2,
+                    String s3) {
+               }
+            }
+            """
+        );
+
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
+        var styles = detector.build();
+        var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+        assertThat(tabsAndIndents.getContinuationIndent()).isEqualTo(5);
+    }
+
+    @Test
+    @Issue("https://github.com/openrewrite/rewrite/issues/3550")
+    void alignParametersWhenMultiple() {
+        var cus = jp().parse(
+          """
+            class Test {
+            	void foo(String s1,
+            	         String s2,
+            	         String s3) {
+            	}
+            }
+            """
+        );
+
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
+        var styles = detector.build();
+        var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+        assertThat(tabsAndIndents.getMethodDeclarationParameters().getAlignWhenMultiple()).isTrue();
     }
 
     @Issue("https://github.com/openrewrite/rewrite/issues/1221")
@@ -51,8 +122,8 @@ class AutodetectTest implements RewriteTest {
             }
             """
         );
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
 
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
@@ -89,8 +160,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
 
@@ -132,8 +203,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
 
@@ -165,8 +236,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
 
@@ -192,8 +263,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isTrue();
@@ -223,8 +294,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isTrue();
@@ -255,8 +326,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isTrue();
@@ -286,8 +357,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isFalse();
@@ -312,8 +383,8 @@ class AutodetectTest implements RewriteTest {
             }
             """
         );
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isFalse();
@@ -343,8 +414,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
         assertThat(tabsAndIndents.getUseTabCharacter()).isFalse();
@@ -356,25 +427,25 @@ class AutodetectTest implements RewriteTest {
     void rewriteImportLayout() {
         var cus = jp().parse(
           """
-                import com.fasterxml.jackson.annotation.JsonCreator;
-                
-                import org.openrewrite.internal.StringUtils;
-                import org.openrewrite.internal.ListUtils;
-                import org.openrewrite.internal.lang.Nullable;
-                
-                import java.util.*;
-                import java.util.stream.Collectors;
-                
-                import static java.util.Collections.*;
-                import static java.util.function.Function.identity;
-                
-                public class Test {
-                }
+            import com.fasterxml.jackson.annotation.JsonCreator;
+            
+            import org.openrewrite.internal.StringUtils;
+            import org.openrewrite.internal.ListUtils;
+            import org.openrewrite.internal.lang.Nullable;
+            
+            import java.util.*;
+            import java.util.stream.Collectors;
+            
+            import static java.util.Collections.*;
+            import static java.util.function.Function.identity;
+            
+            public class Test {
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var importLayout = NamedStyles.merge(ImportLayoutStyle.class, singletonList(styles));
 
@@ -432,8 +503,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var importLayout = NamedStyles.merge(ImportLayoutStyle.class, singletonList(styles));
 
@@ -459,21 +530,21 @@ class AutodetectTest implements RewriteTest {
     void detectStarImport() {
         var cus = jp().parse(
           """
-                import java.util.*;
-                
-                public class Test {
-                    List<Integer> l;
-                    Set<Integer> s;
-                    Map<Integer, Integer> m;
-                    Collection<Integer> c;
-                    LinkedHashMap<Integer, Integer> lhm;
-                    HashSet<Integer> integer;
-                }
+            import java.util.*;
+            
+            public class Test {
+                List<Integer> l;
+                Set<Integer> s;
+                Map<Integer, Integer> m;
+                Collection<Integer> c;
+                LinkedHashMap<Integer, Integer> lhm;
+                HashSet<Integer> integer;
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var importLayout = NamedStyles.merge(ImportLayoutStyle.class, singletonList(styles));
 
@@ -484,33 +555,33 @@ class AutodetectTest implements RewriteTest {
     void detectImportCounts() {
         var cus = jp().parse(
           """
-                import java.util.ArrayList;
-                import java.util.Collections;
-                import java.util.HashSet;
-                import java.util.List;
-                import java.util.Set;
-                
-                import javax.persistence.Entity;
-                import javax.persistence.FetchType;
-                import javax.persistence.JoinColumn;
-                import javax.persistence.JoinTable;
-                import javax.persistence.ManyToMany;
-                import javax.persistence.Table;
-                import javax.xml.bind.annotation.XmlElement;
-                
-                public class Test {
-                    List<Integer> l;
-                    Set<Integer> s;
-                    Map<Integer, Integer> m;
-                    Collection<Integer> c;
-                    LinkedHashMap<Integer, Integer> lhm;
-                    HashSet<Integer> integer;
-                }
+            import java.util.ArrayList;
+            import java.util.Collections;
+            import java.util.HashSet;
+            import java.util.List;
+            import java.util.Set;
+            
+            import javax.persistence.Entity;
+            import javax.persistence.FetchType;
+            import javax.persistence.JoinColumn;
+            import javax.persistence.JoinTable;
+            import javax.persistence.ManyToMany;
+            import javax.persistence.Table;
+            import javax.xml.bind.annotation.XmlElement;
+            
+            public class Test {
+                List<Integer> l;
+                Set<Integer> s;
+                Map<Integer, Integer> m;
+                Collection<Integer> c;
+                LinkedHashMap<Integer, Integer> lhm;
+                HashSet<Integer> integer;
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var importLayout = NamedStyles.merge(ImportLayoutStyle.class, singletonList(styles));
 
@@ -522,16 +593,16 @@ class AutodetectTest implements RewriteTest {
     void detectMethodArgs() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a("a" ,"b" ,"c" ,"d");
-                    }
+            class Test {
+                void i() {
+                    a("a" ,"b" ,"c" ,"d");
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -543,16 +614,16 @@ class AutodetectTest implements RewriteTest {
     void detectMethodArgAfterComma() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a("a", "b");
-                    }
+            class Test {
+                void i() {
+                    a("a", "b");
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -565,16 +636,16 @@ class AutodetectTest implements RewriteTest {
     void detectColonInForEachLoop() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        for (int i : new int[]{}) {}
-                    }
+            class Test {
+                void i() {
+                    for (int i : new int[]{}) {}
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -585,16 +656,16 @@ class AutodetectTest implements RewriteTest {
     void detectAfterTypeCast() {
         var cus = jp().parse(
           """
-                class T {
-                    {
-                        String s = (String) getString();
-                    }
+            class T {
+                {
+                    String s = (String) getString();
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -614,8 +685,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -627,16 +698,16 @@ class AutodetectTest implements RewriteTest {
     void detectMethodArgsNoArgs() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a();
-                    }
+            class Test {
+                void i() {
+                    a();
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -648,16 +719,16 @@ class AutodetectTest implements RewriteTest {
     void detectMethodArgsNoSpaceForComma() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a("a","b","c");
-                    }
+            class Test {
+                void i() {
+                    a("a","b","c");
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -669,16 +740,16 @@ class AutodetectTest implements RewriteTest {
     void detectMethodArgsSpaceForComma() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a("a" , "b" , "c");
-                    }
+            class Test {
+                void i() {
+                    a("a" , "b" , "c");
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -690,16 +761,16 @@ class AutodetectTest implements RewriteTest {
     void detectAfterCommaInNewArray() {
         var cus = jp().parse(
           """
-                class T {
-                    static {
-                        int[] i = new int[]{1, 2, 3, 4};
-                    }
+            class T {
+                static {
+                    int[] i = new int[]{1, 2, 3, 4};
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -712,19 +783,19 @@ class AutodetectTest implements RewriteTest {
     void detectAfterCommaShouldIgnoreFirstElement() {
         var cus = jp().parse(
           """
-                class T {
-                    static {
-                        int[] i0 = new int[]{1, 2};
-                        int[] i1 = new int[]{2, 3};
-                        int[] i2 = new int[]{3, 4};
-                        int[] i3 = new int[]{4,5};
-                    }
+            class T {
+                static {
+                    int[] i0 = new int[]{1, 2};
+                    int[] i1 = new int[]{2, 3};
+                    int[] i2 = new int[]{3, 4};
+                    int[] i3 = new int[]{4,5};
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -737,23 +808,23 @@ class AutodetectTest implements RewriteTest {
     void detectAfterCommaBasedOnLambdas() {
         var cus = jp().parse(
           """
-                import java.util.function.BiConsumer;
-                
-                class T {
-                    static {
-                        int[] i0 = new int[]{1,2};
-                        int[] i1 = new int[]{2,3};
-
-                        BiConsumer<?, ?> c0 = (a, b) -> {};
-                        BiConsumer<?, ?> c1 = (a, b) -> {};
-                        BiConsumer<?, ?> c2 = (a, b) -> {};
-                    }
+            import java.util.function.BiConsumer;
+            
+            class T {
+                static {
+                    int[] i0 = new int[]{1,2};
+                    int[] i1 = new int[]{2,3};
+            
+                    BiConsumer<?, ?> c0 = (a, b) -> {};
+                    BiConsumer<?, ?> c1 = (a, b) -> {};
+                    BiConsumer<?, ?> c2 = (a, b) -> {};
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -766,18 +837,18 @@ class AutodetectTest implements RewriteTest {
     void detectNoSpacesWithinMethodCall() {
         var cus = jp().parse(
           """
-                class Test {
-                    void a(String a, String b, String c) {
-                    }
-                    void i() {
-                        a("a","b","c");
-                    }
+            class Test {
+                void a(String a, String b, String c) {
                 }
+                void i() {
+                    a("a","b","c");
+                }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -789,16 +860,16 @@ class AutodetectTest implements RewriteTest {
     void detectSpacesWithinMethodCall() {
         var cus = jp().parse(
           """
-                class Test {
-                    void i() {
-                        a( "a","b","c" );
-                    }
+            class Test {
+                void i() {
+                    a( "a","b","c" );
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var spacesStyle = NamedStyles.merge(SpacesStyle.class, singletonList(styles));
 
@@ -810,19 +881,19 @@ class AutodetectTest implements RewriteTest {
     void detectElseWithNoNewLine() {
         var cus = jp().parse(
           """
-                class Test {
-                    void method(int n) {
-                        if (n == 0) {
-                        } else if (n == 1) {
-                        } else {
-                        }
+            class Test {
+                void method(int n) {
+                    if (n == 0) {
+                    } else if (n == 1) {
+                    } else {
                     }
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var wrappingAndBracesStyle = NamedStyles.merge(WrappingAndBracesStyle.class, singletonList(styles));
 
@@ -834,21 +905,21 @@ class AutodetectTest implements RewriteTest {
     void detectElseOnNewLine() {
         var cus = jp().parse(
           """
-                class Test {
-                    void method(int n) {
-                        if (n == 0) {
-                        }
-                        else if (n == 1) {
-                        }
-                        else {
-                        }
+            class Test {
+                void method(int n) {
+                    if (n == 0) {
+                    }
+                    else if (n == 1) {
+                    }
+                    else {
                     }
                 }
+            }
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var wrappingAndBracesStyle = NamedStyles.merge(WrappingAndBracesStyle.class, singletonList(styles));
 
@@ -866,8 +937,8 @@ class AutodetectTest implements RewriteTest {
           "}\r\n"
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var lineFormatStyle = NamedStyles.merge(GeneralFormatStyle.class, singletonList(styles));
 
@@ -885,8 +956,8 @@ class AutodetectTest implements RewriteTest {
           "}\r\n"
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var lineFormatStyle = NamedStyles.merge(GeneralFormatStyle.class, singletonList(styles));
 
@@ -915,8 +986,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
 
@@ -926,7 +997,7 @@ class AutodetectTest implements RewriteTest {
           .as("While there are outlier 3 and 9 space indents, the most prevalent indentation is 6")
           .isEqualTo(6);
         assertThat(tabsAndIndents.getContinuationIndent())
-          .as("With no actual continuation indents to go off of, assume IntelliJ default of 2x the normal indent")
+          .as("With no actual continuation indents to go off of, assume IntelliJ IDEA default of 2x the normal indent")
           .isEqualTo(12);
     }
 
@@ -966,8 +1037,8 @@ class AutodetectTest implements RewriteTest {
             """
         );
 
-        var detector = Autodetect.detect(cus);
-        detector.count(); // terminal operation
+        var detector = Autodetect.detector();
+        cus.forEach(detector::sample);
         var styles = detector.build();
         var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
 
@@ -975,5 +1046,123 @@ class AutodetectTest implements RewriteTest {
         assertThat(tabsAndIndents.getTabSize()).isEqualTo(4);
         assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
         assertThat(tabsAndIndents.getContinuationIndent()).isEqualTo(12);
+    }
+
+    @Nested
+    class ContinuationIndentForAnnotations {
+        @Test
+        @Issue("https://github.com/openrewrite/rewrite/issues/3568")
+        void ignoreSpaceBetweenAnnotations() {
+            var cus = jp().parse(
+              """
+                class Test {
+                    @SafeVarargs
+                    @Deprecated
+                    @SuppressWarnings({"mistakes"})
+                    boolean count(String... strings) {
+                        return strings.length;
+                    }
+                }
+                """
+            );
+
+            var detector = Autodetect.detector();
+            cus.forEach(detector::sample);
+            var styles = detector.build();
+            var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+            assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
+            assertThat(tabsAndIndents.getContinuationIndent())
+              .as("With no actual continuation indents to go off of, assume IntelliJ IDEA default of 2x the normal indent")
+              .isEqualTo(8);
+        }
+
+        @Test
+        void includeAnnotationAsAnnotationArg() {
+            var cus = jp().parse(
+              """
+                @interface Foo{}
+                @interface Foos{
+                    Foo[] value();
+                }
+                
+                class Test {
+                    @Foos(
+                       @Foo)
+                    boolean count(String... strings) {
+                        return strings.length;
+                    }
+                }
+                """
+            );
+
+            var detector = Autodetect.detector();
+            cus.forEach(detector::sample);
+            var styles = detector.build();
+            var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+            assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
+            assertThat(tabsAndIndents.getContinuationIndent())
+              .isEqualTo(3);
+        }
+
+        @Test
+        void includeAnnotationArgArray() {
+            var cus = jp().parse(
+              """
+                @interface Foo{}
+                @interface Foos{
+                    Foo[] value();
+                }
+                
+                class Test {
+                    @Foos(
+                       {@Foo})
+                    boolean count(String... strings) {
+                        return strings.length;
+                    }
+                }
+                """
+            );
+
+            var detector = Autodetect.detector();
+            cus.forEach(detector::sample);
+            var styles = detector.build();
+            var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+            assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
+            assertThat(tabsAndIndents.getContinuationIndent())
+              .isEqualTo(3);
+        }
+
+        @Test
+        @ExpectedToFail("existing visitor does not super-visit newArray trees")
+        void includeAnnotationArgArrayElements() {
+            var cus = jp().parse(
+              """
+                @interface Foo{}
+                @interface Foos{
+                    Foo[] value();
+                }
+                
+                class Test {
+                    @Foos({
+                       @Foo})
+                    boolean count(String... strings) {
+                        return strings.length;
+                    }
+                }
+                """
+            );
+
+            var detector = Autodetect.detector();
+            cus.forEach(detector::sample);
+            var styles = detector.build();
+            var tabsAndIndents = NamedStyles.merge(TabsAndIndentsStyle.class, singletonList(styles));
+
+            assertThat(tabsAndIndents.getIndentSize()).isEqualTo(4);
+            assertThat(tabsAndIndents.getContinuationIndent())
+              .isEqualTo(3);
+        }
     }
 }

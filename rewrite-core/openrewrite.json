@@ -53,16 +53,8 @@
             "type": "boolean",
             "default": false
           },
-          "applicability": {
-            "type": "object",
-            "properties": {
-              "singleSource": {
-                "$ref": "#/$defs/recipeList"
-              },
-              "anySource": {
-                "$ref": "#/$defs/recipeList"
-              }
-            }
+          "preconditions": {
+            "$ref": "#/$defs/recipeList"
           },
           "recipeList": {
             "$ref": "#/$defs/recipeList"

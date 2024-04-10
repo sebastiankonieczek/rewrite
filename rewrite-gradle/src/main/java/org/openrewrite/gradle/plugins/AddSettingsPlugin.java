@@ -19,10 +19,12 @@ import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.openrewrite.*;
 import org.openrewrite.gradle.IsSettingsGradle;
+import org.openrewrite.internal.StringUtils;
 import org.openrewrite.internal.lang.Nullable;
+import org.openrewrite.semver.Semver;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class AddSettingsPlugin extends Recipe {
     @Option(displayName = "Plugin id",
             description = "The plugin id to apply.",
@@ -30,8 +32,14 @@ public class AddSettingsPlugin extends Recipe {
     String pluginId;
 
     @Option(displayName = "Plugin version",
-            description = "An exact version number or node-style semver selector used to select the version number.",
-            example = "3.x")
+            description = "An exact version number or node-style semver selector used to select the version number. " +
+                          "You can also use `latest.release` for the latest available version and `latest.patch` if " +
+                          "the current version is a valid semantic version. For more details, you can look at the documentation " +
+                          "page of [version selectors](https://docs.openrewrite.org/reference/dependency-version-selectors). " +
+                          "Defaults to `latest.release`.",
+            example = "3.x",
+            required = false)
+    @Nullable
     String version;
 
     @Option(displayName = "Version pattern",
@@ -44,16 +52,28 @@ public class AddSettingsPlugin extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Add a Gradle settings plugin";
+        return "Add Gradle settings plugin";
     }
 
     @Override
     public String getDescription() {
-        return "Add a Gradle settings plugin to `settings.gradle(.kts)`.";
+        return "Add plugin to Gradle settings file `plugins` block by id.";
+    }
+
+    @Override
+    public Validated<Object> validate() {
+        Validated<Object> validated = super.validate();
+        if (version != null) {
+            validated = validated.and(Semver.validate(version, versionPattern));
+        }
+        return validated;
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        return Preconditions.check(new IsSettingsGradle<>(), new AddPluginVisitor(pluginId, version, versionPattern));
+        return Preconditions.check(
+                new IsSettingsGradle<>(),
+                new AddPluginVisitor(pluginId, StringUtils.isBlank(version) ? "latest.release" : version, versionPattern)
+        );
     }
 }

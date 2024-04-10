@@ -15,10 +15,13 @@
  */
 package org.openrewrite.text;
 
+import org.intellij.lang.annotations.Language;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
+import org.openrewrite.Issue;
 import org.openrewrite.test.RewriteTest;
 
+import static org.openrewrite.groovy.Assertions.groovy;
 import static org.openrewrite.test.SourceSpecs.text;
 
 class CreateTextFileTest implements RewriteTest {
@@ -31,6 +34,18 @@ class CreateTextFileTest implements RewriteTest {
             null,
             "foo",
             spec -> spec.path(".github/CODEOWNERS")
+          )
+        );
+    }
+
+    @Test
+    void hasCreatedFileWithTrailingNewline() {
+        rewriteRun(
+          spec -> spec.recipe(new CreateTextFile("foo\n", ".github/CODEOWNERS", false)),
+          text(
+            null,
+            "foo\n",
+            spec -> spec.path(".github/CODEOWNERS").noTrim()
           )
         );
     }
@@ -82,6 +97,34 @@ class CreateTextFileTest implements RewriteTest {
             null,
             "foo",
             spec -> spec.path(".github/CODEOWNERS")
+          )
+        );
+    }
+
+    @Test
+    @Issue("https://github.com/openrewrite/rewrite-jenkins/issues/52")
+    void shouldOverrideDifferentSourceFileType() {
+        @Language("groovy")
+        String after = """
+          /*
+           See the documentation for more options:
+           https://github.com/jenkins-infra/pipeline-library/
+          */
+          buildPlugin(
+            useContainerAgent: true, // Set to `false` if you need to use Docker for containerized tests
+            configurations: [
+              [platform: 'linux', jdk: 21],
+              [platform: 'windows', jdk: 17],
+          ])""";
+        rewriteRun(
+          spec -> spec.recipe(new CreateTextFile(after, "Jenkinsfile", true)),
+          groovy(
+            """
+              #!groovy
+              buildPlugin()
+              """,
+            after,
+            spec -> spec.path("Jenkinsfile")
           )
         );
     }

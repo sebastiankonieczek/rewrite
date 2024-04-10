@@ -50,6 +50,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void method() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               class A {
@@ -67,6 +68,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void returnExpression() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               class A {
@@ -85,6 +87,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void variableDeclarationsInClass() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               class A {
@@ -105,6 +108,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void variableDeclarationsInMethod() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               class A {
@@ -127,6 +131,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void variableDeclarationsInForLoops() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               class Test {
@@ -153,6 +158,7 @@ class MinimumViableSpacingTest implements RewriteTest {
     @Test
     void spacesBetweenModifiers() {
         rewriteRun(
+          spec -> spec.expectedCyclesThatMakeChanges(2),
           java(
             """
               public final class A {
@@ -163,6 +169,56 @@ class MinimumViableSpacingTest implements RewriteTest {
               """,
             """
               public final class A{public static String foo(){return "foo";}}
+              """
+          )
+        );
+    }
+
+    // This test can not be reproduced by running MinimumViableSpacingVisitor only, so using `AutoFormat` recipe here.
+    @Issue("https://github.com/openrewrite/rewrite/issues/3346")
+    @Test
+    void annotatedReturnTypeExpression() {
+        rewriteRun(
+          spec -> spec.recipe(new AutoFormat()),
+          java(
+            """
+              class A {
+                  public @Deprecated String method() {
+                      return "name";
+                  }
+
+                  public    @Deprecated String method2() {
+                      return "name";
+                  }
+              }
+              """,
+            """
+              class A {
+                  public @Deprecated String method() {
+                      return "name";
+                  }
+
+                  public @Deprecated String method2() {
+                      return "name";
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void annotatedFinalParameter() {
+        rewriteRun(
+          spec -> spec.recipe(toRecipe(() -> new MinimumViableSpacingVisitor<>(null))
+          ),
+          java(
+            """
+              class A {
+                  public String method(final @Deprecated int a) {
+                      return "name";
+                  }
+              }
               """
           )
         );

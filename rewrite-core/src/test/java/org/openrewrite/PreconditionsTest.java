@@ -88,22 +88,83 @@ class PreconditionsTest implements RewriteTest {
     void checkApplicabilityAgainstOtherSourceTypes() {
         rewriteRun(
           spec -> spec.recipe(toRecipe(() -> Preconditions.check(
-            new PlainTextVisitor<>() {
-                @Override
-                public @Nullable PlainText visit(@Nullable Tree tree, ExecutionContext ctx) {
-                    return super.visit(tree, ctx);
-                }
-            },
+            new PlainTextVisitor<>(),
             new PlainTextVisitor<>()
           ))),
           other("hello")
         );
     }
 
+    @Test
+    void orOtherSourceType() {
+        rewriteRun(
+          spec -> spec.recipe(toRecipe(() -> Preconditions.check(Preconditions.or(
+              new PlainTextVisitor<>() {
+                  @Nullable
+                  @Override
+                  public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                      return tree != null && ((PlainText) tree).getText().contains("foo") ? SearchResult.found(tree) : tree;
+                  }
+              }),
+            new TreeVisitor<>() {
+                @Override
+                public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                    return SearchResult.found(tree, "recipe");
+                }
+            })
+          )),
+          other("hello")
+        );
+    }
+
+    @Test
+    void andOtherSourceType() {
+        rewriteRun(
+          spec -> spec.recipe(toRecipe(() -> Preconditions.check(Preconditions.and(
+              new PlainTextVisitor<>() {
+                  @Nullable
+                  @Override
+                  public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                      return tree != null && ((PlainText) tree).getText().contains("foo") ? SearchResult.found(tree) : tree;
+                  }
+              }),
+            new TreeVisitor<>() {
+                @Override
+                public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                    return SearchResult.found(tree, "recipe");
+                }
+            })
+          )),
+          other("hello")
+        );
+    }
+
+    @Test
+    void notOtherSourceType() {
+        rewriteRun(
+          spec -> spec.recipe(toRecipe(() -> Preconditions.check(Preconditions.not(
+              new PlainTextVisitor<>() {
+                  @Nullable
+                  @Override
+                  public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                      return tree != null && ((PlainText) tree).getText().contains("foo") ? SearchResult.found(tree) : tree;
+                  }
+              }),
+            new TreeVisitor<>() {
+                @Override
+                public Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                    return SearchResult.found(tree, "recipe");
+                }
+            })
+          )),
+          other("hello", "~~(recipe)~~>⚛⚛⚛ The contents of this file are not visible. ⚛⚛⚛")
+        );
+    }
+
     Recipe recipe(TreeVisitor<?, ExecutionContext> applicability) {
         return toRecipe(() -> Preconditions.check(applicability, new PlainTextVisitor<>() {
             @Override
-            public PlainText visitText(PlainText text, ExecutionContext executionContext) {
+            public PlainText visitText(PlainText text, ExecutionContext ctx) {
                 return text.withText("goodbye");
             }
         }));
@@ -112,7 +173,7 @@ class PreconditionsTest implements RewriteTest {
     PlainTextVisitor<ExecutionContext> contains(String s) {
         return new PlainTextVisitor<>() {
             @Override
-            public PlainText visitText(PlainText text, ExecutionContext executionContext) {
+            public PlainText visitText(PlainText text, ExecutionContext ctx) {
                 if (text.getText().contains(s)) {
                     return SearchResult.found(text);
                 }

@@ -18,12 +18,14 @@ package org.openrewrite.marker;
 
 import lombok.Value;
 import lombok.With;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.*;
-import org.eclipse.jgit.transport.RemoteConfig;
-import org.eclipse.jgit.transport.URIish;
-import org.eclipse.jgit.treewalk.WorkingTreeOptions;
+import org.openrewrite.jgit.api.Git;
+import org.openrewrite.jgit.api.errors.GitAPIException;
+import org.openrewrite.jgit.lib.*;
+import org.openrewrite.jgit.revwalk.RevCommit;
+import org.openrewrite.jgit.transport.RemoteConfig;
+import org.openrewrite.jgit.transport.URIish;
+import org.openrewrite.jgit.treewalk.WorkingTreeOptions;
+import org.openrewrite.Incubating;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.marker.ci.BuildEnvironment;
 import org.openrewrite.marker.ci.IncompleteGitConfigException;
@@ -35,10 +37,10 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.time.LocalDate;
+import java.util.*;
 
+import static java.util.Collections.emptyList;
 import static org.openrewrite.Tree.randomId;
 
 @Value
@@ -52,6 +54,7 @@ public class GitProvenance implements Marker {
     @Nullable
     String branch;
 
+    @Nullable
     String change;
 
     @Nullable
@@ -59,6 +62,10 @@ public class GitProvenance implements Marker {
 
     @Nullable
     EOL eol;
+
+    @Nullable
+    @Incubating(since = "8.9.0")
+    List<Committer> committers;
 
     /**
      * Extract the organization name, including sub-organizations for git hosting services which support such a concept,
@@ -80,10 +87,12 @@ public class GitProvenance implements Marker {
             baseUrl = baseUrl.substring(4);
         }
         String remainder = origin.substring(origin.indexOf(baseUrl) + baseUrl.length());
+        if (remainder.startsWith(":")) {
+            remainder = remainder.substring(1);
+        }
         if (remainder.startsWith("/")) {
             remainder = remainder.substring(1);
         }
-
         return remainder.substring(0, remainder.lastIndexOf('/'));
     }
 
@@ -140,8 +149,8 @@ public class GitProvenance implements Marker {
      *                    determined from a {@link BuildEnvironment} marker if possible.
      * @return A marker containing git provenance information.
      */
-    public static @Nullable GitProvenance fromProjectDirectory(Path projectDir, @Nullable BuildEnvironment environment) {
-
+    @Nullable
+    public static GitProvenance fromProjectDirectory(Path projectDir, @Nullable BuildEnvironment environment) {
         if (environment != null) {
             if (environment instanceof JenkinsBuildEnvironment) {
                 JenkinsBuildEnvironment jenkinsBuildEnvironment = (JenkinsBuildEnvironment) environment;
@@ -182,6 +191,7 @@ public class GitProvenance implements Marker {
         }
     }
 
+    @Nullable
     private static GitProvenance fromGitConfig(Path projectDir) {
         String branch = null;
         try (Repository repository = new RepositoryBuilder().findGitDir(projectDir.toFile()).build()) {
@@ -198,17 +208,18 @@ public class GitProvenance implements Marker {
         }
     }
 
-    private static GitProvenance fromGitConfig(Repository repository, @Nullable String branch, String changeset) {
+    private static GitProvenance fromGitConfig(Repository repository, @Nullable String branch, @Nullable String changeset) {
         if (branch == null) {
             branch = resolveBranchFromGitConfig(repository);
         }
         return new GitProvenance(randomId(), getOrigin(repository), branch, changeset,
-                getAutocrlf(repository), getEOF(repository));
+                getAutocrlf(repository), getEOF(repository),
+                getCommitters(repository));
     }
 
     @Nullable
     static String resolveBranchFromGitConfig(Repository repository) {
-        String branch = null;
+        String branch;
         try {
             try (Git git = Git.open(repository.getDirectory())) {
                 ObjectId commit = repository.resolve(Constants.HEAD);
@@ -256,7 +267,7 @@ public class GitProvenance implements Marker {
             List<RemoteConfig> remotes = git.remoteList().call();
             for (RemoteConfig remote : remotes) {
                 if (remoteBranch.startsWith(remote.getName()) &&
-                        (branch == null || branch.length() > remoteBranch.length() - remote.getName().length() - 1)) {
+                    (branch == null || branch.length() > remoteBranch.length() - remote.getName().length() - 1)) {
                     branch = remoteBranch.substring(remote.getName().length() + 1); // +1 for the forward slash
                 }
             }
@@ -308,6 +319,32 @@ public class GitProvenance implements Marker {
         }
     }
 
+    private static List<Committer> getCommitters(Repository repository) {
+        try (Git git = Git.open(repository.getDirectory())) {
+            ObjectId head = repository.readOrigHead();
+            if (head == null) {
+                Ref headRef = repository.getRefDatabase().findRef("HEAD");
+                if (headRef == null || headRef.getObjectId() == null) {
+                    return emptyList();
+                }
+                head = headRef.getObjectId();
+            }
+
+            Map<String, Committer> committers = new TreeMap<>();
+            for (RevCommit commit : git.log().add(head).call()) {
+                PersonIdent who = commit.getAuthorIdent();
+                Committer committer = committers.computeIfAbsent(who.getEmailAddress(),
+                        email -> new Committer(who.getName(), email, new TreeMap<>()));
+                committer.getCommitsByDay().compute(who.getWhen().toInstant().atZone(who.getTimeZone().toZoneId())
+                                .toLocalDate(),
+                        (day, count) -> count == null ? 1 : count + 1);
+            }
+            return new ArrayList<>(committers.values());
+        } catch (IOException | GitAPIException e) {
+            return emptyList();
+        }
+    }
+
     @Nullable
     private static String getChangeset(Repository repository) throws IOException {
         ObjectId head = repository.resolve(Constants.HEAD);
@@ -339,5 +376,13 @@ public class GitProvenance implements Marker {
         CRLF,
         LF,
         Native
+    }
+
+    @Value
+    @With
+    public static class Committer {
+        String name;
+        String email;
+        NavigableMap<LocalDate, Integer> commitsByDay;
     }
 }

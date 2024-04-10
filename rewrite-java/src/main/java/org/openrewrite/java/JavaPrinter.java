@@ -55,10 +55,13 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
     }
 
     @Override
+    @SuppressWarnings("ForLoopReplaceableByForEach")
     public Space visitSpace(Space space, Space.Location loc, PrintOutputCapture<P> p) {
         p.append(space.getWhitespace());
 
-        for (Comment comment : space.getComments()) {
+        List<Comment> comments = space.getComments();
+        for (int i = 0; i < comments.size(); i++) {
+            Comment comment = comments.get(i);
             visitMarkers(comment.getMarkers(), p);
             comment.printComment(getCursor(), p);
             p.append(comment.getSuffix());
@@ -144,7 +147,7 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
     @Override
     public J visitAnnotation(Annotation annotation, PrintOutputCapture<P> p) {
         beforeSyntax(annotation, Space.Location.ANNOTATION_PREFIX, p);
-        p.append("@");
+        p.append('@');
         visit(annotation.getAnnotationType(), p);
         visitContainer("(", annotation.getPadding().getArguments(), JContainer.Location.ANNOTATION_ARGUMENTS, ",", ")", p);
         afterSyntax(annotation, p);
@@ -163,7 +166,7 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
     @Override
     public J visitArrayDimension(ArrayDimension arrayDimension, PrintOutputCapture<P> p) {
         beforeSyntax(arrayDimension, Space.Location.DIMENSION_PREFIX, p);
-        p.append("[");
+        p.append('[');
         visitRightPadded(arrayDimension.getPadding().getIndex(), JRightPadded.Location.ARRAY_INDEX, "]", p);
         afterSyntax(arrayDimension, p);
         return arrayDimension;
@@ -172,15 +175,37 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
     @Override
     public J visitArrayType(ArrayType arrayType, PrintOutputCapture<P> p) {
         beforeSyntax(arrayType, Space.Location.ARRAY_TYPE_PREFIX, p);
-        visit(arrayType.getElementType(), p);
-        for (JRightPadded<Space> d : arrayType.getDimensions()) {
-            visitSpace(d.getElement(), Space.Location.DIMENSION, p);
+        TypeTree type = arrayType;
+        while (type instanceof ArrayType) {
+            type = ((ArrayType) type).getElementType();
+        }
+        visit(type, p);
+        visit(arrayType.getAnnotations(), p);
+        if (arrayType.getDimension() != null) {
+            visitSpace(arrayType.getDimension().getBefore(), Space.Location.DIMENSION_PREFIX, p);
             p.append('[');
-            visitSpace(d.getAfter(), Space.Location.DIMENSION_SUFFIX, p);
+            visitSpace(arrayType.getDimension().getElement(), Space.Location.DIMENSION, p);
             p.append(']');
+
+            if (arrayType.getElementType() instanceof J.ArrayType) {
+                printDimensions((ArrayType) arrayType.getElementType(), p);
+            }
         }
         afterSyntax(arrayType, p);
         return arrayType;
+    }
+
+    private void printDimensions(J.ArrayType arrayType, PrintOutputCapture<P> p) {
+        beforeSyntax(arrayType, Space.Location.ARRAY_TYPE_PREFIX, p);
+        visit(arrayType.getAnnotations(), p);
+        visitSpace(arrayType.getDimension().getBefore(), Space.Location.DIMENSION_PREFIX, p);
+        p.append('[');
+        visitSpace(arrayType.getDimension().getElement(), Space.Location.DIMENSION, p);
+        p.append(']');
+        if (arrayType.getElementType() instanceof J.ArrayType) {
+            printDimensions((ArrayType) arrayType.getElementType(), p);
+        }
+        afterSyntax(arrayType, p);
     }
 
     @Override
@@ -493,7 +518,7 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
         visitRightPadded(cu.getPadding().getPackageDeclaration(), JRightPadded.Location.PACKAGE, ";", p);
         visitRightPadded(cu.getPadding().getImports(), JRightPadded.Location.IMPORT, ";", p);
         if (!cu.getImports().isEmpty()) {
-            p.append(";");
+            p.append(';');
         }
         visit(cu.getClasses(), p);
         afterSyntax(cu, p);
@@ -616,6 +641,8 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
 
     @Override
     public J visitIdentifier(Identifier ident, PrintOutputCapture<P> p) {
+        visitSpace(Space.EMPTY, Space.Location.ANNOTATIONS, p);
+        visit(ident.getAnnotations(), p);
         beforeSyntax(ident, Space.Location.IDENTIFIER_PREFIX, p);
         p.append(ident.getSimpleName());
         afterSyntax(ident, p);
@@ -654,6 +681,14 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
         visit(instanceOf.getPattern(), p);
         afterSyntax(instanceOf, p);
         return instanceOf;
+    }
+
+    @Override
+    public J visitIntersectionType(IntersectionType intersectionType, PrintOutputCapture<P> p) {
+        beforeSyntax(intersectionType, Space.Location.INTERSECTION_TYPE_PREFIX, p);
+        visitContainer("", intersectionType.getPadding().getBounds(), JContainer.Location.TYPE_BOUNDS, "&", "", p);
+        afterSyntax(intersectionType, p);
+        return intersectionType;
     }
 
     @Override
@@ -702,8 +737,9 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
                 }
             }
 
-            char[] valueSourceArr = literal.getValueSource().toCharArray();
-            for (char c : valueSourceArr) {
+            String valueSource = literal.getValueSource();
+            for (int j = 0; j < valueSource.length(); j++) {
+                char c = valueSource.charAt(j);
                 p.append(c);
                 if (surrogate != null && surrogate.getValueSourceIndex() == ++i) {
                     while (surrogate != null && surrogate.getValueSourceIndex() == i) {
@@ -741,9 +777,9 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
             visit(typeParameters.getAnnotations(), p);
             visitSpace(typeParameters.getPrefix(), Space.Location.TYPE_PARAMETERS, p);
             visitMarkers(typeParameters.getMarkers(), p);
-            p.append("<");
+            p.append('<');
             visitRightPadded(typeParameters.getPadding().getTypeParameters(), JRightPadded.Location.TYPE_PARAMETER, ",", p);
-            p.append(">");
+            p.append('>');
         }
         visit(method.getReturnTypeExpression(), p);
         visit(method.getAnnotations().getName().getAnnotations(), p);
@@ -786,6 +822,7 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
             visitModifier(m, p);
         }
         visit(multiVariable.getTypeExpression(), p);
+        // For backwards compatibility.
         for (JLeftPadded<Space> dim : multiVariable.getDimensionsBeforeName()) {
             visitSpace(dim.getBefore(), Space.Location.DIMENSION_PREFIX, p);
             p.append('[');
@@ -827,6 +864,16 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
         visit(newClass.getBody(), p);
         afterSyntax(newClass, p);
         return newClass;
+    }
+
+    @Override
+    public J visitNullableType(J.NullableType nt, PrintOutputCapture<P> p) {
+        beforeSyntax(nt, Space.Location.NULLABLE_TYPE_PREFIX, p);
+        visit(nt.getTypeTree(), p);
+        visitSpace(nt.getPadding().getTypeTree().getAfter(), Space.Location.NULLABLE_TYPE_SUFFIX, p);
+        p.append("?");
+        afterSyntax(nt, p);
+        return nt;
     }
 
     @Override
@@ -900,7 +947,7 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
     @Override
     public <T extends J> J visitParentheses(Parentheses<T> parens, PrintOutputCapture<P> p) {
         beforeSyntax(parens, Space.Location.PARENTHESES_PREFIX, p);
-        p.append("(");
+        p.append('(');
         visitRightPadded(parens.getPadding().getTree(), JRightPadded.Location.PARENTHESES, ")", p);
         afterSyntax(parens, p);
         return parens;
@@ -1036,20 +1083,20 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
                 p.append("--");
                 break;
             case Positive:
-                p.append("+");
+                p.append('+');
                 visit(unary.getExpression(), p);
                 break;
             case Negative:
-                p.append("-");
+                p.append('-');
                 visit(unary.getExpression(), p);
                 break;
             case Complement:
-                p.append("~");
+                p.append('~');
                 visit(unary.getExpression(), p);
                 break;
             case Not:
             default:
-                p.append("!");
+                p.append('!');
                 visit(unary.getExpression(), p);
         }
         afterSyntax(unary, p);
@@ -1137,15 +1184,19 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
         beforeSyntax(j.getPrefix(), j.getMarkers(), loc, p);
     }
 
+    @SuppressWarnings("ForLoopReplaceableByForEach")
     protected void beforeSyntax(Space prefix, Markers markers, @Nullable Space.Location loc, PrintOutputCapture<P> p) {
-        for (Marker marker : markers.getMarkers()) {
+        List<Marker> markersList = markers.getMarkers();
+        for (int i = 0; i < markersList.size(); i++) {
+            Marker marker = markersList.get(i);
             p.append(p.getMarkerPrinter().beforePrefix(marker, new Cursor(getCursor(), marker), JAVA_MARKER_WRAPPER));
         }
         if (loc != null) {
             visitSpace(prefix, loc, p);
         }
         visitMarkers(markers, p);
-        for (Marker marker : markers.getMarkers()) {
+        for (int i = 0; i < markersList.size(); i++) {
+            Marker marker = markersList.get(i);
             p.append(p.getMarkerPrinter().beforeSyntax(marker, new Cursor(getCursor(), marker), JAVA_MARKER_WRAPPER));
         }
     }
@@ -1154,8 +1205,11 @@ public class JavaPrinter<P> extends JavaVisitor<PrintOutputCapture<P>> {
         afterSyntax(j.getMarkers(), p);
     }
 
+    @SuppressWarnings("ForLoopReplaceableByForEach")
     protected void afterSyntax(Markers markers, PrintOutputCapture<P> p) {
-        for (Marker marker : markers.getMarkers()) {
+        List<Marker> markersMarkers = markers.getMarkers();
+        for (int i = 0; i < markersMarkers.size(); i++) {
+            Marker marker = markersMarkers.get(i);
             p.append(p.getMarkerPrinter().afterSyntax(marker, new Cursor(getCursor(), marker), JAVA_MARKER_WRAPPER));
         }
     }

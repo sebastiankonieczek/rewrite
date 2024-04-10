@@ -18,24 +18,35 @@ package org.openrewrite.java;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.openrewrite.*;
+import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.search.UsesMethod;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaType;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class SimplifyMethodChain extends Recipe {
     @Option(displayName = "Method pattern chain",
-            description = "A list of method patterns that are called in sequence")
+            description = "A list of method patterns that are called in sequence",
+            example = "['java.util.Map keySet()', 'java.util.Set contains(..)']")
     List<String> methodPatternChain;
 
     @Option(displayName = "New method name",
-            description = "The method name that will replace the existing name. The new method name target is assumed to have the same arguments as the last method in the chain.")
+            description = "The method name that will replace the existing name. The new method name target is assumed to have the same arguments as the last method in the chain.",
+            example = "containsKey")
     String newMethodName;
+
+    @Option(displayName = "Match on overrides",
+            description = "When enabled, find methods that are overrides of the method pattern.",
+            required = false,
+            example = "false")
+    @Nullable
+    Boolean matchOverrides;
 
     @Override
     public String getDisplayName() {
@@ -51,13 +62,13 @@ public class SimplifyMethodChain extends Recipe {
     public Validated<Object> validate() {
         return super.validate().and(Validated.test("methodPatternChain",
                 "Requires more than one pattern",
-                methodPatternChain, c -> c.size() > 1));
+                methodPatternChain, c -> c != null && c.size() > 1));
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         List<MethodMatcher> matchers = methodPatternChain.stream()
-                .map(MethodMatcher::new)
+                .map(matcher -> new MethodMatcher(matcher, matchOverrides))
                 .collect(Collectors.toList());
         Collections.reverse(matchers);
 
@@ -65,7 +76,7 @@ public class SimplifyMethodChain extends Recipe {
             @Override
             public J visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
                 for (String method : methodPatternChain) {
-                    doAfterVisit(new UsesMethod<>(method));
+                    doAfterVisit(new UsesMethod<>(method, matchOverrides));
                 }
                 return cu;
             }
@@ -84,9 +95,10 @@ public class SimplifyMethodChain extends Recipe {
 
                 if (select instanceof J.MethodInvocation) {
                     assert m.getMethodType() != null;
+                    JavaType.Method mt = m.getMethodType().withName(newMethodName);
                     return m.withSelect(((J.MethodInvocation) select).getSelect())
-                            .withName(m.getName().withSimpleName(newMethodName))
-                            .withMethodType(m.getMethodType().withName(newMethodName));
+                            .withName(m.getName().withSimpleName(newMethodName).withType(mt))
+                            .withMethodType(mt);
                 }
 
                 return m;

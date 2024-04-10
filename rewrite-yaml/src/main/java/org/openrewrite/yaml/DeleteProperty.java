@@ -36,7 +36,7 @@ import static java.util.stream.StreamSupport.stream;
 import static org.openrewrite.Tree.randomId;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class DeleteProperty extends Recipe {
     @Option(displayName = "Property key",
             description = "The key to be deleted.",
@@ -53,7 +53,7 @@ public class DeleteProperty extends Recipe {
 
     @Option(displayName = "Use relaxed binding",
             description = "Whether to match the `propertyKey` using [relaxed binding](https://docs.spring.io/spring-boot/docs/2.5.6/reference/html/features.html#features.external-config.typesafe-configuration-properties.relaxed-binding) " +
-                    "rules. Default is `true`. Set to `false`  to use exact matching.",
+                    "rules. Defaults to `true`. If you want to use exact matching in your search, set this to `false`.",
             required = false)
     @Nullable
     Boolean relaxedBinding;
@@ -74,12 +74,12 @@ public class DeleteProperty extends Recipe {
         return new YamlIsoVisitor<ExecutionContext>() {
 
             @Override
-            public Yaml.Documents visitDocuments(Yaml.Documents documents, ExecutionContext executionContext) {
+            public Yaml.Documents visitDocuments(Yaml.Documents documents, ExecutionContext ctx) {
                 // TODO: Update DeleteProperty to support documents having Anchor / Alias Pairs
-                if (documents != new ReplaceAliasWithAnchorValueVisitor<ExecutionContext>().visit(documents, executionContext)) {
+                if (documents != new ReplaceAliasWithAnchorValueVisitor<ExecutionContext>().visit(documents, ctx)) {
                     return documents;
                 }
-                return super.visitDocuments(documents, executionContext);
+                return super.visitDocuments(documents, ctx);
             }
 
             @Override

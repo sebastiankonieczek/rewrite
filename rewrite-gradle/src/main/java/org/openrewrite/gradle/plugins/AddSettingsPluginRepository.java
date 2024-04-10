@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 import static java.util.Objects.requireNonNull;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class AddSettingsPluginRepository extends Recipe {
 
     @Option(displayName = "Type",
@@ -47,6 +47,7 @@ public class AddSettingsPluginRepository extends Recipe {
 
     @Option(displayName = "URL",
             description = "The url of the artifact repository",
+            required = false,
             example = "https://repo.spring.io")
     String url;
 

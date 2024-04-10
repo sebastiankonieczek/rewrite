@@ -5,6 +5,7 @@ plugins {
 dependencies {
     implementation("org.assertj:assertj-core:latest.release")
     implementation(project(":rewrite-java"))
+    implementation(project(":rewrite-groovy"))
     implementation(project(":rewrite-test"))
 
     testImplementation("io.github.classgraph:classgraph:latest.release")
@@ -19,7 +20,7 @@ dependencies {
     testRuntimeOnly("org.projectlombok:lombok:latest.release")
     testRuntimeOnly("org.apache.commons:commons-lang3:latest.release")
     testRuntimeOnly(project(":rewrite-yaml"))
-    testRuntimeOnly("org.eclipse.jgit:org.eclipse.jgit:5.13.+")
+    testImplementation(project(":rewrite-maven"))
 }
 
 tasks.withType<Javadoc> {

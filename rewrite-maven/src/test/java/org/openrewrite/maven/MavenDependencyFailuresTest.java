@@ -83,7 +83,7 @@ class MavenDependencyFailuresTest implements RewriteTest {
     void unresolvableParent() { // Dad said he was heading to the corner store for cigarettes, and hasn't been resolvable for the past 20 years :'(
         rewriteRun(
           spec -> spec
-            .recipe(new UpgradeParentVersion("*", "*", "latest.patch", null, null))
+            .recipe(new UpgradeParentVersion("*", "*", "latest.patch", null))
             .executionContext(MavenExecutionContextView.view(new InMemoryExecutionContext())
               .setRepositories(List.of(MavenRepository.builder().id("jenkins").uri("https://repo.jenkins-ci.org/public").knownToExist(true).build())))
             .recipeExecutionContext(new InMemoryExecutionContext())
@@ -139,6 +139,8 @@ class MavenDependencyFailuresTest implements RewriteTest {
              </project>
             """
         );
+        Path localJar = localRepository.resolve("com/bad/bad-artifact/1/bad-artifact-1.jar");
+        Files.writeString(localJar, "dummy");
 
         MavenRepository mavenLocal = MavenRepository.builder().id("local").uri(localRepository.toUri().toString())
           .snapshots(false).knownToExist(true).build();
@@ -176,8 +178,8 @@ class MavenDependencyFailuresTest implements RewriteTest {
                 <artifactId>my-app</artifactId>
                 <version>1</version>
                 <dependencies>
-                  <!--~~(doesnotexist:doesnotexist:1 failed. Unable to download POM. Tried repositories:
-              https://repo.maven.apache.org/maven2: HTTP 404)~~>--><!--~~(doesnotexist:another:1 failed. Unable to download POM. Tried repositories:
+                  <!--~~(doesnotexist:doesnotexist:1 failed. Unable to download POM: doesnotexist:doesnotexist:1. Tried repositories:
+              https://repo.maven.apache.org/maven2: HTTP 404)~~>--><!--~~(doesnotexist:another:1 failed. Unable to download POM: doesnotexist:another:1. Tried repositories:
               https://repo.maven.apache.org/maven2: HTTP 404)~~>--><dependency>
                     <groupId>com.bad</groupId>
                     <artifactId>bad-artifact</artifactId>
@@ -217,38 +219,38 @@ class MavenDependencyFailuresTest implements RewriteTest {
 
     @Test
     void unresolvableDependency() {
-          rewriteRun(
-            spec -> spec.executionContext(new InMemoryExecutionContext()),
-            pomXml(
-              """
-                <project>
-                  <groupId>com.mycompany.app</groupId>
-                  <artifactId>my-app</artifactId>
-                  <version>1</version>
-                  <dependencies>
-                    <dependency>
-                      <groupId>com.google.guava</groupId>
-                      <artifactId>guava</artifactId>
-                      <version>doesnotexist</version>
-                    </dependency>
-                    <dependency>
-                      <groupId>com.google.another</groupId>
-                      <artifactId>${doesnotexist}</artifactId>
-                    </dependency>
-                    <dependency>
-                      <groupId>com.google.yetanother</groupId>
-                      <artifactId>${doesnotexist}</artifactId>
-                      <version>1</version>
-                    </dependency>
-                  </dependencies>
-                </project>
-                """,
-              spec -> spec.afterRecipe(after -> {
-                  Optional<ParseExceptionResult> maybeParseException = after.getMarkers().findFirst(ParseExceptionResult.class);
-                  assertThat(maybeParseException).isPresent();
-              })
-            )
-          );
+        rewriteRun(
+          spec -> spec.executionContext(new InMemoryExecutionContext()),
+          pomXml(
+            """
+              <project>
+                <groupId>com.mycompany.app</groupId>
+                <artifactId>my-app</artifactId>
+                <version>1</version>
+                <dependencies>
+                  <dependency>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>doesnotexist</version>
+                  </dependency>
+                  <dependency>
+                    <groupId>com.google.another</groupId>
+                    <artifactId>${doesnotexist}</artifactId>
+                  </dependency>
+                  <dependency>
+                    <groupId>com.google.yetanother</groupId>
+                    <artifactId>${doesnotexist}</artifactId>
+                    <version>1</version>
+                  </dependency>
+                </dependencies>
+              </project>
+              """,
+            spec -> spec.afterRecipe(after -> {
+                Optional<ParseExceptionResult> maybeParseException = after.getMarkers().findFirst(ParseExceptionResult.class);
+                assertThat(maybeParseException).hasValueSatisfying(per -> assertThat(per.getMessage()).contains("Unable to download POM: com.google.guava:guava:doesnotexist. Tried repositories"));
+            })
+          )
+        );
     }
 
     @Test
@@ -282,7 +284,7 @@ class MavenDependencyFailuresTest implements RewriteTest {
     private Recipe updateModel() {
         return toRecipe(() -> new MavenIsoVisitor<>() {
             @Override
-            public Xml.Document visitDocument(Xml.Document document, ExecutionContext executionContext) {
+            public Xml.Document visitDocument(Xml.Document document, ExecutionContext ctx) {
                 if (document.getMarkers().findFirst(Markup.class).isEmpty()) {
                     maybeUpdateModel();
                 }

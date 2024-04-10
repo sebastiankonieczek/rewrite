@@ -27,15 +27,15 @@ import org.openrewrite.yaml.tree.Yaml;
 import static org.openrewrite.Tree.randomId;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class ChangeValue extends Recipe {
     @Option(displayName = "Key path",
-            description = "A JsonPath expression to locate a YAML entry.",
+            description = "A [JsonPath](https://github.com/json-path/JsonPath) expression to locate a YAML entry.",
             example = "$.subjects.kind")
-    String oldKeyPath;
+    String keyPath;
 
     @Option(displayName = "New value",
-            description = "The new value to set for the key identified by oldKeyPath.",
+            description = "The new value to set for the key identified by the `oldKeyPath`.",
             example = "Deployment")
     String value;
 
@@ -45,17 +45,22 @@ public class ChangeValue extends Recipe {
     }
 
     @Override
+    public String getInstanceNameSuffix() {
+        return String.format("`%s` to `%s`", keyPath, value);
+    }
+
+    @Override
     public String getDescription() {
-        return "Change a YAML mapping entry value leaving the key intact.";
+        return "Change a YAML mapping entry value while leaving the key intact.";
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        JsonPathMatcher matcher = new JsonPathMatcher(oldKeyPath);
+        JsonPathMatcher matcher = new JsonPathMatcher(keyPath);
         return new YamlIsoVisitor<ExecutionContext>() {
             @Override
-            public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext context) {
-                Yaml.Mapping.Entry e = super.visitMappingEntry(entry, context);
+            public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
+                Yaml.Mapping.Entry e = super.visitMappingEntry(entry, ctx);
                 if (matcher.matches(getCursor()) && (!(e.getValue() instanceof Yaml.Scalar) || !((Yaml.Scalar) e.getValue()).getValue().equals(value))) {
                     Yaml.Anchor anchor = (e.getValue() instanceof Yaml.Scalar) ? ((Yaml.Scalar) e.getValue()).getAnchor() : null;
                     String prefix = e.getValue() instanceof Yaml.Sequence ? ((Yaml.Sequence) e.getValue()).getOpeningBracketPrefix() : e.getValue().getPrefix();
@@ -68,8 +73,8 @@ public class ChangeValue extends Recipe {
             }
 
             @Override
-            public Yaml.Scalar visitScalar(Yaml.Scalar scalar, ExecutionContext executionContext) {
-                Yaml.Scalar s = super.visitScalar(scalar, executionContext);
+            public Yaml.Scalar visitScalar(Yaml.Scalar scalar, ExecutionContext ctx) {
+                Yaml.Scalar s = super.visitScalar(scalar, ctx);
                 if (matcher.matches(getCursor())) {
                     s = s.withValue(value);
                 }

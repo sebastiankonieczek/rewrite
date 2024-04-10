@@ -15,6 +15,7 @@
  */
 package org.openrewrite.table;
 
+import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.*;
 import org.openrewrite.marker.SearchResult;
@@ -26,8 +27,9 @@ import org.openrewrite.text.PlainTextVisitor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.openrewrite.test.SourceSpecs.text;
 
-public class RecipeRunStatsTest implements RewriteTest {
+class RecipeRunStatsTest implements RewriteTest {
 
+    @AllArgsConstructor
     static class RecipeWithApplicabilityTest extends Recipe {
         @Override
         public String getDisplayName() {
@@ -44,7 +46,7 @@ public class RecipeRunStatsTest implements RewriteTest {
             return Preconditions.check(
               new PlainTextVisitor<>() {
                   @Override
-                  public PlainText visitText(PlainText text, ExecutionContext executionContext) {
+                  public PlainText visitText(PlainText text, ExecutionContext ctx) {
                       if (!"sam".equals(text.getText())) {
                           return SearchResult.found(text);
                       }
@@ -53,7 +55,7 @@ public class RecipeRunStatsTest implements RewriteTest {
               },
               new PlainTextVisitor<>() {
                   @Override
-                  public PlainText preVisit(PlainText tree, ExecutionContext ctx) {
+                  public PlainText visitText(PlainText tree, ExecutionContext ctx) {
                       return tree.withText("sam");
                   }
               });

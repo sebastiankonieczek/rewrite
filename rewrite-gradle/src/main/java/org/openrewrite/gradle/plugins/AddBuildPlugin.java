@@ -18,11 +18,12 @@ package org.openrewrite.gradle.plugins;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.openrewrite.*;
-import org.openrewrite.gradle.IsBuildGradle;
+import org.openrewrite.gradle.search.FindGradleProject;
 import org.openrewrite.internal.lang.Nullable;
+import org.openrewrite.semver.Semver;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class AddBuildPlugin extends Recipe {
     @Option(displayName = "Plugin id",
             description = "The plugin id to apply.",
@@ -30,7 +31,10 @@ public class AddBuildPlugin extends Recipe {
     String pluginId;
 
     @Option(displayName = "Plugin version",
-            description = "An exact version number or node-style semver selector used to select the version number.",
+            description = "An exact version number or node-style semver selector used to select the version number. " +
+                          "You can also use `latest.release` for the latest available version and `latest.patch` if " +
+                          "the current version is a valid semantic version. For more details, you can look at the documentation " +
+                          "page of [version selectors](https://docs.openrewrite.org/reference/dependency-version-selectors).",
             example = "3.x",
             required = false)
     @Nullable
@@ -46,16 +50,28 @@ public class AddBuildPlugin extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Add a Gradle build plugin";
+        return "Add Gradle plugin";
     }
 
     @Override
     public String getDescription() {
-        return "Add a Gradle build plugin to `build.gradle(.kts)`.";
+        return "Add a build plugin to a Gradle build file's `plugins` block.";
+    }
+
+    @Override
+    public Validated<Object> validate() {
+        Validated<Object> validated = super.validate();
+        if (version != null) {
+            validated = validated.and(Semver.validate(version, versionPattern));
+        }
+        return validated;
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        return Preconditions.check(new IsBuildGradle<>(), new AddPluginVisitor(pluginId, version, versionPattern));
+        return Preconditions.check(
+                new FindGradleProject(FindGradleProject.SearchCriteria.Marker),
+                new AddPluginVisitor(pluginId, version, versionPattern)
+        );
     }
 }

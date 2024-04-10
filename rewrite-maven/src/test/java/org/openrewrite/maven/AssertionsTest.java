@@ -15,7 +15,7 @@
  */
 package org.openrewrite.maven;
 
-import lombok.Getter;
+import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.*;
@@ -45,20 +45,23 @@ class AssertionsTest implements RewriteTest {
     void xmlAndPomXmlUseCorrectParserWhenPomXmlIsFirst() {
         rewriteRun(
           spec -> spec.recipe(new MavenOnlyRecipe()),
-          pomXml("""
-                        <project>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>test</artifactId>
-                            <version>1.0.0</version>
-                            <dependencies>
-                                <dependency>
-                                    <groupId>com.fasterxml.jackson</groupId>
-                                    <artifactId>jackson-base</artifactId>
-                                    <version>2.14.2</version>
-                                </dependency>
-                            </dependencies>
-                        </project>
-            """), xml("""
+          pomXml(
+            """
+              <project>
+                  <groupId>org.openrewrite</groupId>
+                  <artifactId>test</artifactId>
+                  <version>1.0.0</version>
+                  <dependencies>
+                      <dependency>
+                          <groupId>com.fasterxml.jackson</groupId>
+                          <artifactId>jackson-base</artifactId>
+                          <version>2.14.2</version>
+                      </dependency>
+                  </dependencies>
+              </project>
+              """
+          ),
+          xml("""
               <?xml version="1.0" encoding="UTF-8" ?>
               <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
               </suppressions>""",
@@ -75,25 +78,29 @@ class AssertionsTest implements RewriteTest {
               <?xml version="1.0" encoding="UTF-8" ?>
               <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
               </suppressions>""",
-            spec -> spec.path("suppressions.xml")),
-          pomXml("""
-                        <project>
-                            <groupId>org.openrewrite</groupId>
-                            <artifactId>test</artifactId>
-                            <version>1.0.0</version>
-                            <dependencies>
-                                <dependency>
-                                    <groupId>com.fasterxml.jackson</groupId>
-                                    <artifactId>jackson-base</artifactId>
-                                    <version>2.14.2</version>
-                                </dependency>
-                            </dependencies>
-                        </project>
-            """)
+            spec -> spec.path("suppressions.xml")
+          ),
+          pomXml(
+            """
+              <project>
+                  <groupId>org.openrewrite</groupId>
+                  <artifactId>test</artifactId>
+                  <version>1.0.0</version>
+                  <dependencies>
+                      <dependency>
+                          <groupId>com.fasterxml.jackson</groupId>
+                          <artifactId>jackson-base</artifactId>
+                          <version>2.14.2</version>
+                      </dependency>
+                  </dependencies>
+              </project>
+              """
+          )
         );
         assertThat(xmlCount.get()).isEqualTo(2);
     }
 
+    @AllArgsConstructor
     private static class MavenOnlyRecipe extends Recipe {
         @Override
         public String getDisplayName() {
@@ -123,9 +130,9 @@ class AssertionsTest implements RewriteTest {
                 }
 
                 @Override
-                public Xml.Tag visitTag(Xml.Tag tag, ExecutionContext executionContext) {
+                public Xml.Tag visitTag(Xml.Tag tag, ExecutionContext ctx) {
                     assertThat(filename).isEqualTo("pom.xml");
-                    return super.visitTag(tag, executionContext);
+                    return super.visitTag(tag, ctx);
                 }
             };
         }

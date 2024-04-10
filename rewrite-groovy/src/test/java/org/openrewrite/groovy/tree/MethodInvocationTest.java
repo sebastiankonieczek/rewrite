@@ -22,7 +22,6 @@ import org.openrewrite.test.RewriteTest;
 import static org.openrewrite.groovy.Assertions.groovy;
 
 class MethodInvocationTest implements RewriteTest {
-
     @Test
     void gradle() {
         rewriteRun(

@@ -19,21 +19,46 @@ import org.openrewrite.Tree;
 import org.openrewrite.internal.StringUtils;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.JavaIsoVisitor;
-import org.openrewrite.java.tree.*;
+import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaSourceFile;
+import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.SearchResult;
 
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static java.util.Objects.requireNonNull;
 
 public class UsesType<P> extends JavaIsoVisitor<P> {
-    private final Pattern typePattern;
+
+    @Nullable
+    private final String fullyQualifiedType;
+    @Nullable
+    private final Predicate<JavaType> typePattern;
 
     @Nullable
     private final Boolean includeImplicit;
 
     public UsesType(String fullyQualifiedType, @Nullable Boolean includeImplicit) {
-        this.typePattern = Pattern.compile(StringUtils.aspectjNameToPattern(fullyQualifiedType));
+        if (fullyQualifiedType.contains("*")) {
+            this.fullyQualifiedType = null;
+            if (fullyQualifiedType.indexOf('*') == fullyQualifiedType.length() - 1) {
+                int dotdot = fullyQualifiedType.indexOf("..");
+                if (dotdot == -1 && fullyQualifiedType.charAt(fullyQualifiedType.length() - 2) == '.') {
+                    this.typePattern = packagePattern(fullyQualifiedType.substring(0, fullyQualifiedType.length() - 2));
+                } else if (dotdot == fullyQualifiedType.length() - 3) {
+                    this.typePattern = packagePrefixPattern(fullyQualifiedType.substring(0, dotdot));
+                } else {
+                    this.typePattern = genericPattern(Pattern.compile(StringUtils.aspectjNameToPattern(fullyQualifiedType)));
+                }
+            } else {
+                this.typePattern = genericPattern(Pattern.compile(StringUtils.aspectjNameToPattern(fullyQualifiedType)));
+            }
+        } else {
+            this.fullyQualifiedType = fullyQualifiedType;
+            this.typePattern = null;
+        }
         this.includeImplicit = includeImplicit;
     }
 
@@ -42,25 +67,6 @@ public class UsesType<P> extends JavaIsoVisitor<P> {
         if (tree instanceof JavaSourceFile) {
             JavaSourceFile cu = (JavaSourceFile) requireNonNull(tree);
             JavaSourceFile c = cu;
-
-            for (JavaType.Method method : c.getTypesInUse().getUsedMethods()) {
-                if (Boolean.TRUE.equals(includeImplicit) || method.hasFlags(Flag.Static)) {
-                    if ((c = maybeMark(c, method.getDeclaringType())) != cu) {
-                        return c;
-                    }
-                }
-                if (Boolean.TRUE.equals(includeImplicit)) {
-                    if ((c = maybeMark(c, method.getReturnType())) != cu) {
-                        return c;
-                    }
-
-                    for (JavaType parameterType : method.getParameterTypes()) {
-                        if ((c = maybeMark(c, parameterType)) != cu) {
-                            return c;
-                        }
-                    }
-                }
-            }
 
             for (JavaType type : c.getTypesInUse().getTypesInUse()) {
                 JavaType checkType = type instanceof JavaType.Primitive ? type : TypeUtils.asFullyQualified(type);
@@ -78,6 +84,23 @@ public class UsesType<P> extends JavaIsoVisitor<P> {
                     return c;
                 }
             }
+
+            if (Boolean.TRUE.equals(includeImplicit)) {
+                for (JavaType.Method method : c.getTypesInUse().getUsedMethods()) {
+                    if ((c = maybeMark(c, method.getDeclaringType())) != cu) {
+                        return c;
+                    }
+                    if ((c = maybeMark(c, method.getReturnType())) != cu) {
+                        return c;
+                    }
+
+                    for (JavaType parameterType : method.getParameterTypes()) {
+                        if ((c = maybeMark(c, parameterType)) != cu) {
+                            return c;
+                        }
+                    }
+                }
+            }
         }
         return (J) tree;
     }
@@ -87,10 +110,41 @@ public class UsesType<P> extends JavaIsoVisitor<P> {
             return c;
         }
 
-        if (TypeUtils.isAssignableTo(typePattern, type)) {
+        if (typePattern != null && TypeUtils.isAssignableTo(typePattern, type)
+            || fullyQualifiedType != null && TypeUtils.isAssignableTo(fullyQualifiedType, type)) {
             return SearchResult.found(c);
         }
 
         return c;
     }
+
+    private static Predicate<JavaType> genericPattern(Pattern pattern) {
+        return type -> {
+            if (type instanceof JavaType.FullyQualified) {
+                return pattern.matcher(((JavaType.FullyQualified) type).getFullyQualifiedName()).matches();
+            } else if (type instanceof JavaType.Primitive) {
+                return pattern.matcher(((JavaType.Primitive) type).getKeyword()).matches();
+            }
+            return false;
+        };
+    }
+
+    private static Predicate<JavaType> packagePattern(String name) {
+        return type -> type instanceof JavaType.FullyQualified &&
+                       // optimization to avoid unnecessary memory allocations
+                       ((JavaType.FullyQualified) type).getFullyQualifiedName().startsWith(name) &&
+                       ((JavaType.FullyQualified) type).getPackageName().equals(name);
+    }
+
+    private static Predicate<JavaType> packagePrefixPattern(String prefix) {
+        String subPackagePrefix = prefix + ".";
+        return type -> {
+            if (type instanceof JavaType.FullyQualified) {
+                String packageName = ((JavaType.FullyQualified) type).getPackageName();
+                return packageName.equals(prefix) || packageName.startsWith(subPackagePrefix);
+            }
+            return false;
+        };
+    }
+
 }

@@ -34,21 +34,34 @@ class FindRecipesTest implements RewriteTest {
             .recipe(new FindRecipes())
             .parser(JavaParser.fromJavaVersion()
               .classpath(JavaParser.runtimeClasspath()))
-            .expectedCyclesThatMakeChanges(1)
-            .cycles(1)
             .dataTable(RewriteRecipeSource.Row.class, rows -> {
                 assertThat(rows).hasSize(1);
                 RewriteRecipeSource.Row row = rows.get(0);
                 assertThat(row.getDisplayName()).isEqualTo("My recipe");
                 assertThat(row.getDescription()).isEqualTo("This is my recipe.");
+                assertThat(row.getOptions()).isEqualTo("[{\"name\":\"methodPattern\",\"displayName\":\"Method pattern\",\"description\":\"A method pattern that is used to find matching method declarations/invocations.\",\"example\":\"org.mockito.Matchers anyVararg()\"},{\"name\":\"newAccessLevel\",\"displayName\":\"New access level\",\"description\":\"New method access level to apply to the method, like \\\"public\\\".\",\"example\":\"public\",\"valid\":[\"private\",\"protected\",\"package\",\"public\"],\"required\":false}]");
             }),
           java(
             """
+              import org.openrewrite.Option;
               import org.openrewrite.internal.lang.NonNullApi;
               import org.openrewrite.Recipe;
+              import org.openrewrite.internal.lang.Nullable;
               
               @NonNullApi
               class MyRecipe extends Recipe {
+                @Option(displayName = "Method pattern",
+                        description = "A method pattern that is used to find matching method declarations/invocations.",
+                        example = "org.mockito.Matchers anyVararg()")
+                String methodPattern;
+              
+                @Option(displayName = "New access level",
+                        description = "New method access level to apply to the method, like \\"public\\".",
+                        example = "public",
+                        valid = {"private", "protected", "package", "public"},
+                        required = false)
+                String newAccessLevel;
+              
                 @Override
                 public String getDisplayName() {
                     return "My recipe";
@@ -61,11 +74,25 @@ class FindRecipesTest implements RewriteTest {
               }
               """,
             """
+              import org.openrewrite.Option;
               import org.openrewrite.internal.lang.NonNullApi;
               import org.openrewrite.Recipe;
+              import org.openrewrite.internal.lang.Nullable;
               
               @NonNullApi
               class /*~~>*/MyRecipe extends Recipe {
+                @Option(displayName = "Method pattern",
+                        description = "A method pattern that is used to find matching method declarations/invocations.",
+                        example = "org.mockito.Matchers anyVararg()")
+                String methodPattern;
+                
+                @Option(displayName = "New access level",
+                        description = "New method access level to apply to the method, like \\"public\\".",
+                        example = "public",
+                        valid = {"private", "protected", "package", "public"},
+                        required = false)
+                String newAccessLevel;
+                
                 @Override
                 public String getDisplayName() {
                     return "My recipe";
@@ -75,6 +102,25 @@ class FindRecipesTest implements RewriteTest {
                 public String getDescription() {
                     return "This is my recipe.";
                 }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void returnInLambda() {
+        rewriteRun(
+          spec -> spec.recipe(new FindRecipes()),
+          java(
+            """
+              import java.util.function.UnaryOperator;
+              
+              class SomeTest {
+                  private final UnaryOperator<String> notEmpty = actual -> {
+                      //noinspection CodeBlock2Expr
+                      return actual + "\\n";
+                  };
               }
               """
           )

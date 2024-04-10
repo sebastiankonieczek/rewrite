@@ -287,7 +287,7 @@ public class BlankLinesVisitor<P> extends JavaIsoVisitor<P> {
                 c.withSuffix(minimumLines(c.getSuffix(), min)) : c));
     }
 
-    private String minimumLines(String whitespace, int min) {
+    public static String minimumLines(String whitespace, int min) {
         if (min == 0) {
             return whitespace;
         }
@@ -302,7 +302,8 @@ public class BlankLinesVisitor<P> extends JavaIsoVisitor<P> {
 
     private static int getNewLineCount(String whitespace) {
         int newLineCount = 0;
-        for (char c : whitespace.toCharArray()) {
+        for (int i = 0; i < whitespace.length(); i++) {
+            char c = whitespace.charAt(i);
             if (c == '\n') {
                 newLineCount++;
             }

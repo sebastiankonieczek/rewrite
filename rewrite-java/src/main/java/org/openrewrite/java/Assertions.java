@@ -52,38 +52,38 @@ public class Assertions {
         }
     }
 
-    // validateTypes and assertValidTypes can be merged into a single function once JavaRecipeTest is removed
-    static SourceFile validateTypes(SourceFile after, RecipeSpec testMethodSpec, RecipeSpec testClassSpec) {
-        if (after instanceof JavaSourceFile) {
-            TypeValidation typeValidation = testMethodSpec.getTypeValidation() != null ? testMethodSpec.getTypeValidation() : testClassSpec.getTypeValidation();
-            if (typeValidation == null) {
-                typeValidation = new TypeValidation();
-            }
-            assertValidTypes(typeValidation, (JavaSourceFile) after);
+    public static SourceFile validateTypes(SourceFile source, TypeValidation typeValidation) {
+        if (source instanceof JavaSourceFile) {
+            assertValidTypes(typeValidation, (JavaSourceFile) source);
         }
-        return after;
+        return source;
     }
 
-    public static void assertValidTypes(TypeValidation typeValidation, J sf) {
+    private static void assertValidTypes(TypeValidation typeValidation, J sf) {
         if (typeValidation.identifiers() || typeValidation.methodInvocations() || typeValidation.methodDeclarations() || typeValidation.classDeclarations()
                 || typeValidation.constructorInvocations()) {
             List<FindMissingTypes.MissingTypeResult> missingTypeResults = FindMissingTypes.findMissingTypes(sf);
             missingTypeResults = missingTypeResults.stream()
                     .filter(missingType -> {
-                        if (typeValidation.identifiers() && missingType.getJ() instanceof J.Identifier) {
+                        if (missingType.getJ() instanceof J.Identifier) {
+                            return typeValidation.identifiers();
+                        } else if (missingType.getJ() instanceof J.ClassDeclaration) {
+                            return typeValidation.classDeclarations();
+                        } else if (missingType.getJ() instanceof J.MethodInvocation || missingType.getJ() instanceof J.MemberReference) {
+                            return typeValidation.methodInvocations();
+                        } else if (missingType.getJ() instanceof J.NewClass) {
+                            return typeValidation.constructorInvocations();
+                        } else if (missingType.getJ() instanceof J.MethodDeclaration) {
+                            return typeValidation.methodDeclarations();
+                        } else if (missingType.getJ() instanceof J.VariableDeclarations.NamedVariable) {
+                            return typeValidation.variableDeclarations();
+                        } else {
                             return true;
-                        } else if (typeValidation.classDeclarations() && missingType.getJ() instanceof J.ClassDeclaration) {
-                            return true;
-                        } else if (typeValidation.methodInvocations() && missingType.getJ() instanceof J.MethodInvocation) {
-                            return true;
-                        } else if (typeValidation.constructorInvocations() && missingType.getJ() instanceof J.NewClass) {
-                            return true;
-                        } else
-                            return typeValidation.methodDeclarations() && missingType.getJ() instanceof J.MethodDeclaration;
+                        }
                     })
                     .collect(Collectors.toList());
             if (!missingTypeResults.isEmpty()) {
-                throw new IllegalStateException("AST contains missing or invalid type information\n" + missingTypeResults.stream().map(v -> v.getPath() + "\n" + v.getPrintedTree())
+                throw new IllegalStateException("LST contains missing or invalid type information\n" + missingTypeResults.stream().map(v -> v.getPath() + "\n" + v.getPrintedTree())
                         .collect(Collectors.joining("\n\n")));
             }
         }

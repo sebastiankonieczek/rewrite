@@ -22,6 +22,7 @@ import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.ExternalDependency
+import org.gradle.api.artifacts.dsl.DependencyConstraintHandler
 import org.gradle.api.artifacts.dsl.DependencyHandler
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.FileTree
@@ -37,34 +38,40 @@ import org.gradle.process.JavaForkOptions
 import org.gradle.process.ProcessForkOptions
 
 interface DependencyHandlerSpec extends DependencyHandler {
-    Dependency annotationProcessor(Object dependencyNotation)
+    Dependency annotationProcessor(Object... dependencyNotation)
     Dependency annotationProcessor(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency api(Object dependencyNotation)
+    Dependency api(Object... dependencyNotation)
     Dependency api(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency classpath(Object dependencyNotation)
+    Dependency classpath(Object... dependencyNotation)
     Dependency classpath(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency compile(Object dependencyNotation)
+    Dependency compile(Object... dependencyNotation)
     Dependency compile(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency compileOnly(Object dependencyNotation)
+    Dependency compileOnly(Object... dependencyNotation)
     Dependency compileOnly(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency implementation(Object dependencyNotation)
+    Dependency implementation(Object... dependencyNotation)
     Dependency implementation(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency runtime(Object dependencyNotation)
+    Dependency runtime(Object... dependencyNotation)
     Dependency runtime(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency runtimeOnly(Object dependencyNotation)
+    Dependency runtimeOnly(Object... dependencyNotation)
     Dependency runtimeOnly(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency runtimeClasspath(Object dependencyNotation)
+    Dependency runtimeClasspath(Object... dependencyNotation)
     Dependency runtimeClasspath(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency testCompile(Object dependencyNotation)
+    Dependency testCompile(Object... dependencyNotation)
     Dependency testCompile(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency testCompileOnly(Object dependencyNotation)
+    Dependency testCompileOnly(Object... dependencyNotation)
     Dependency testCompileOnly(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=ExternalDependency) Closure closure)
-    Dependency testImplementation(Object dependencyNotation)
+    Dependency testImplementation(Object... dependencyNotation)
     Dependency testImplementation(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency testRuntime(Object dependencyNotation)
+    Dependency testRuntime(Object... dependencyNotation)
     Dependency testRuntime(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
-    Dependency testRuntimeOnly(Object dependencyNotation)
+    Dependency testRuntimeOnly(Object... dependencyNotation)
     Dependency testRuntimeOnly(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
+    Dependency deploy(Object... dependencyNotation)
+    Dependency deploy(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
+    Dependency earlib(Object... dependencyNotation)
+    Dependency earlib(Object dependencyNotation, @DelegatesTo(strategy=Closure.DELEGATE_ONLY, value= ExternalDependency) Closure closure)
+
+    void constraints(Action<? super DependencyConstraintHandler> configureAction)
 }
 
 interface RewriteTestSpec {
@@ -113,11 +120,11 @@ interface RewriteTestSpec {
     RewriteTestSpec include(String... includes)
     RewriteTestSpec include(Iterable<String> includes)
     RewriteTestSpec include(Spec<FileTreeElement> includeSpec)
-    RewriteTestSpec include(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=FileTreeElement)Closure includeSpec)
+    RewriteTestSpec include(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=FileTreeElement) Closure includeSpec)
     RewriteTestSpec exclude(String... excludes)
     RewriteTestSpec exclude(Iterable<String> excludes)
     RewriteTestSpec exclude(Spec<FileTreeElement> excludeSpec)
-    RewriteTestSpec exclude(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=FileTreeElement)Closure excludeSpec)
+    RewriteTestSpec exclude(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=FileTreeElement) Closure excludeSpec)
     RewriteTestSpec setTestNameIncludePatterns(List<String> testNamePattern)
     FileCollection getTestClassesDirs()
     void setTestClassesDirs(FileCollection testClassesDirs)
@@ -125,15 +132,15 @@ interface RewriteTestSpec {
     RewriteTestSpec setIncludes(Iterable<String> includes)
     Set<String> getExcludes()
     RewriteTestSpec setExcludes(Iterable<String> excludes)
-    TestFrameworkOptions options(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=TestFrameworkOptions)Closure testFrameworkConfigure)
+    TestFrameworkOptions options(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=TestFrameworkOptions) Closure testFrameworkConfigure)
     TestFrameworkOptions options(Action<? super TestFrameworkOptions> testFrameworkConfigure)
     void useJUnit()
-    void useJUnit(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=JUnitOptions)Closure testFrameworkConfigure) // delegate
+    void useJUnit(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=JUnitOptions) Closure testFrameworkConfigure) // delegate
     void useJUnit(Action<? super JUnitOptions> testFrameworkConfigure)
     void useJUnitPlatform()
     void useJUnitPlatform(Action<? super JUnitPlatformOptions> testFrameworkConfigure)
     void useTestNG()
-    void useTestNG(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=TestNGOptions)Closure testFrameworkConfigure)
+    void useTestNG(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=TestNGOptions) Closure testFrameworkConfigure)
     void useTestNG(Action<? super TestNGOptions> testFrameworkConfigure)
     FileCollection getClasspath()
     void setClasspath(FileCollection classpath)
@@ -153,7 +160,7 @@ interface ScriptHandlerSpec extends ScriptHandler {
 }
 
 abstract class RewriteGradleProject extends groovy.lang.Script implements Project {
-    Map ext;
+    Map ext
 
     // It would be more correct for ext to delegate to ExtraPropertiesExtension, but StaticTypeCheckingVisitor has problems with that
     abstract void buildscript(@DelegatesTo(strategy=Closure.DELEGATE_ONLY, value=ScriptHandlerSpec) Closure cl)
@@ -182,4 +189,6 @@ abstract class RewriteGradleProject extends groovy.lang.Script implements Projec
     abstract <T extends Task> T task(String name, Class<T> type)
     abstract <T extends Task> T task(String name, Class<T> type, Object... constructorArgs)
     abstract <T extends Task> T task(String name, Class<T> type, Action<? super T> configuration)
+
+    abstract void apply(Map<String, String> args)
 }

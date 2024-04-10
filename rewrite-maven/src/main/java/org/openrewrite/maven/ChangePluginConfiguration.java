@@ -32,7 +32,7 @@ import static org.openrewrite.xml.AddOrUpdateChild.addOrUpdateChild;
 import static org.openrewrite.xml.FilterTagChildrenVisitor.filterChildren;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class ChangePluginConfiguration extends Recipe {
     private static final XPathMatcher PLUGINS_MATCHER = new XPathMatcher("/project/build/plugins");
 
@@ -57,6 +57,11 @@ public class ChangePluginConfiguration extends Recipe {
     @Override
     public String getDisplayName() {
         return "Change Maven plugin configuration";
+    }
+
+    @Override
+    public String getInstanceNameSuffix() {
+        return String.format("for `%s:%s`", groupId, artifactId);
     }
 
     @Override

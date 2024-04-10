@@ -151,20 +151,22 @@ public class MavenSettings {
     }
 
     public List<RawRepositories.Repository> getActiveRepositories(Iterable<String> activeProfiles) {
-        List<RawRepositories.Repository> activeRepositories = new ArrayList<>();
+        LinkedHashMap<String, RawRepositories.Repository> activeRepositories = new LinkedHashMap<>();
 
         if (profiles != null) {
             for (Profile profile : profiles.getProfiles()) {
                 if (profile.isActive(activeProfiles) || (this.activeProfiles != null &&
                                                          profile.isActive(this.activeProfiles.getActiveProfiles()))) {
                     if (profile.repositories != null) {
-                        activeRepositories.addAll(profile.repositories.getRepositories());
+                        for (RawRepositories.Repository repository : profile.repositories.getRepositories()) {
+                            activeRepositories.put(repository.getId(), repository);
+                        }
                     }
                 }
             }
         }
 
-        return activeRepositories;
+        return new ArrayList<>(activeRepositories.values());
     }
 
     public MavenRepository getMavenLocal() {
@@ -231,8 +233,22 @@ public class MavenSettings {
             return new Servers(ListUtils.map(servers.getServers(), this::interpolate));
         }
 
+        @Nullable
+        private ServerConfiguration interpolate(@Nullable ServerConfiguration configuration) {
+            if (configuration == null) {
+                return null;
+            }
+            return new ServerConfiguration(configuration.httpHeaders == null ? null :
+                    ListUtils.map(configuration.httpHeaders, this::interpolate));
+        }
+
+        private HttpHeader interpolate(HttpHeader httpHeader) {
+            return new HttpHeader(interpolate(httpHeader.getName()), interpolate(httpHeader.getValue()));
+        }
+
         private Server interpolate(Server server) {
-            return new Server(interpolate(server.id), interpolate(server.username), interpolate(server.password));
+            return new Server(interpolate(server.id), interpolate(server.username), interpolate(server.password),
+                    interpolate(server.configuration));
         }
 
         @Nullable
@@ -382,5 +398,24 @@ public class MavenSettings {
 
         String username;
         String password;
+
+        @Nullable
+        ServerConfiguration configuration;
+    }
+
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    @Data
+    @With
+    public static class ServerConfiguration {
+        @Nullable
+        List<HttpHeader> httpHeaders;
+    }
+
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    @Data
+    @With
+    public static class HttpHeader {
+        String name;
+        String value;
     }
 }

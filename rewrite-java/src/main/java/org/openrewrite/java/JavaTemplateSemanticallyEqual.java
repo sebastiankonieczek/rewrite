@@ -16,21 +16,20 @@
 package org.openrewrite.java;
 
 import lombok.Value;
-import lombok.With;
 import org.antlr.v4.runtime.*;
 import org.openrewrite.Cursor;
 import org.openrewrite.internal.PropertyPlaceholderHelper;
+import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.internal.grammar.TemplateParameterLexer;
 import org.openrewrite.java.internal.grammar.TemplateParameterParser;
+import org.openrewrite.java.internal.grammar.TemplateParameterParser.TypedPatternContext;
+import org.openrewrite.java.internal.template.TemplateParameter;
+import org.openrewrite.java.internal.template.TypeParameter;
 import org.openrewrite.java.search.SemanticallyEqual;
 import org.openrewrite.java.tree.*;
-import org.openrewrite.marker.Marker;
 import org.openrewrite.marker.Markers;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 import static org.openrewrite.Tree.randomId;
 
@@ -68,6 +67,7 @@ class JavaTemplateSemanticallyEqual extends SemanticallyEqual {
 
         List<J> parameters = new ArrayList<>();
         String substituted = code;
+        Map<String, String> typedPatternByName = new HashMap<>();
         while (true) {
             String previous = substituted;
             substituted = propertyPlaceholderHelper.replacePlaceholders(substituted, key -> {
@@ -87,28 +87,25 @@ class JavaTemplateSemanticallyEqual extends SemanticallyEqual {
                     });
 
                     TemplateParameterParser.MatcherPatternContext ctx = parser.matcherPattern();
-                    String matcherName = ctx.matcherName().Identifier().getText();
-                    List<TemplateParameterParser.MatcherParameterContext> params = ctx.matcherParameter();
+                    if (ctx.typedPattern() == null) {
+                        String paramName = ctx.parameterName().Identifier().getText();
+                        s = typedPatternByName.get(paramName);
+                        if (s == null) {
+                            throw new IllegalArgumentException("The parameter " + paramName + " must be defined before it is referenced.");
+                        }
+                    } else {
+                        TypedPatternContext typedPattern = ctx.typedPattern();
+                        JavaType type = typedParameter(key, typedPattern);
+                        s = TypeUtils.toString(type);
 
-                    if ("any".equals(matcherName)) {
-                        String fqn;
-
-                        if (params.size() == 1) {
-                            if (params.get(0).Identifier() != null) {
-                                fqn = params.get(0).Identifier().getText();
-                            } else {
-                                fqn = params.get(0).FullyQualifiedName().getText();
-                            }
-                        } else {
-                            fqn = "java.lang.Object";
+                        String name = null;
+                        if (typedPattern.parameterName() != null) {
+                            name = typedPattern.parameterName().Identifier().getText();
+                            typedPatternByName.put(name, s);
                         }
 
-                        s = fqn.replace("$", ".");
-
-                        Markers markers = Markers.build(Collections.singleton(new TemplateParameter(randomId(), s)));
+                        Markers markers = Markers.build(Collections.singleton(new TemplateParameter(randomId(), type, name)));
                         parameters.add(new J.Empty(randomId(), Space.EMPTY, markers));
-                    } else {
-                        throw new IllegalArgumentException("Invalid template matcher '" + key + "'");
                     }
                 } else {
                     throw new IllegalArgumentException("Only typed placeholders are allowed.");
@@ -125,41 +122,64 @@ class JavaTemplateSemanticallyEqual extends SemanticallyEqual {
         return parameters.toArray(new J[0]);
     }
 
-    private static TemplateMatchResult matchTemplate(J templateTree, Cursor cursor) {
-        JavaTemplateSemanticallyEqualVisitor semanticallyEqualVisitor = new JavaTemplateSemanticallyEqualVisitor();
-        semanticallyEqualVisitor.visit(templateTree, cursor.getValue(), cursor.getParentOrThrow());
-        return new TemplateMatchResult(semanticallyEqualVisitor.isEqual(), semanticallyEqualVisitor.matchedParameters);
+    private static JavaType typedParameter(String key, TypedPatternContext typedPattern) {
+        String matcherName = typedPattern.patternType().matcherName().Identifier().getText();
+        if ("any".equals(matcherName)) {
+            return TypeParameter.toFullyQualifiedName(typedPattern.patternType().type());
+        } else if ("anyArray".equals(matcherName)) {
+            return new JavaType.Array(null, TypeParameter.toFullyQualifiedName(typedPattern.patternType().type()), null);
+        } else {
+            throw new IllegalArgumentException("Unsupported template matcher '" + key + "'");
+        }
     }
 
-    @Value
-    @With
-    private static class TemplateParameter implements Marker {
-        UUID id;
-        String typeName;
+    private static TemplateMatchResult matchTemplate(J templateTree, Cursor cursor) {
+        if (templateTree == cursor.getValue()) {
+            // When `JavaTemplate#apply()` returns the input itself, it could not be matched
+            return new TemplateMatchResult(false, Collections.emptyList());
+        }
+
+        JavaTemplateSemanticallyEqualVisitor semanticallyEqualVisitor = new JavaTemplateSemanticallyEqualVisitor();
+        semanticallyEqualVisitor.visit(templateTree, cursor.getValue(), cursor.getParentOrThrow());
+        return new TemplateMatchResult(semanticallyEqualVisitor.isEqual(), new ArrayList<>(
+                semanticallyEqualVisitor.matchedParameters.keySet()));
     }
 
     @SuppressWarnings("ConstantConditions")
     private static class JavaTemplateSemanticallyEqualVisitor extends SemanticallyEqualVisitor {
-
-        final List<J> matchedParameters = new ArrayList<>();
+        final Map<J, String> matchedParameters = new LinkedHashMap<>();
 
         public JavaTemplateSemanticallyEqualVisitor() {
             super(true);
         }
 
         private boolean matchTemplateParameterPlaceholder(J.Empty empty, J j) {
-            if (j instanceof TypedTree && !(j instanceof J.Primitive)) {
+            if (j instanceof TypedTree) {
+                if (j instanceof J.Primitive || j instanceof J.Identifier && ((J.Identifier) j).getFieldType() == null) {
+                    // don't match types, only expressions
+                    return false;
+                }
                 TemplateParameter marker = (TemplateParameter) empty.getMarkers().getMarkers().get(0);
-                if ("java.lang.Object".equals(marker.typeName)
-                        || TypeUtils.isAssignableTo(marker.typeName, ((TypedTree) j).getType())) {
-                    return registerMatch(j);
+
+                if (marker.getName() != null) {
+                    for (Map.Entry<J, String> matchedParameter : matchedParameters.entrySet()) {
+                        if (matchedParameter.getValue().equals(marker.getName())) {
+                            return SemanticallyEqual.areEqual(matchedParameter.getKey(), j);
+                        }
+                    }
+                }
+
+                if (TypeUtils.isObject(marker.getType()) ||
+                    TypeUtils.isAssignableTo(marker.getType(), ((TypedTree) j).getType())) {
+                    registerMatch(j, marker.getName());
+                    return true;
                 }
             }
             return false;
         }
 
-        private boolean registerMatch(J j) {
-            return matchedParameters.add(j);
+        private void registerMatch(J j, @Nullable String name) {
+            matchedParameters.put(j, name);
         }
 
         @Override

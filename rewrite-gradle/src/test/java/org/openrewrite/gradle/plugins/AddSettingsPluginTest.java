@@ -28,11 +28,13 @@ import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.openrewrite.gradle.Assertions.settingsGradle;
+import static org.openrewrite.gradle.toolingapi.Assertions.withToolingApi;
 
 class AddSettingsPluginTest implements RewriteTest {
     @Override
     public void defaults(RecipeSpec spec) {
-        spec.recipe(new AddSettingsPlugin("com.gradle.enterprise", "3.11.x", null));
+        spec.beforeRecipe(withToolingApi())
+          .recipe(new AddSettingsPlugin("com.gradle.enterprise", "3.11.x", null));
     }
 
     @Test
@@ -60,12 +62,12 @@ class AddSettingsPluginTest implements RewriteTest {
               """,
             interpolateResolvedVersion(
               """
-              plugins {
-                  id 'com.gradle.enterprise' version '%s'
-              }
+                plugins {
+                    id 'com.gradle.enterprise' version '%s'
+                }
 
-              rootProject.name = 'my-project'
-              """
+                rootProject.name = 'my-project'
+                """
             )
           )
         );
@@ -77,20 +79,18 @@ class AddSettingsPluginTest implements RewriteTest {
           settingsGradle(
             """
               plugins {
-                  id 'org.openrewrite' version '1'
               }
                             
               rootProject.name = 'my-project'
               """,
             interpolateResolvedVersion(
               """
-              plugins {
-                  id 'org.openrewrite' version '1'
-                  id 'com.gradle.enterprise' version '%s'
-              }
-                                    
-              rootProject.name = 'my-project'
-              """
+                plugins {
+                    id 'com.gradle.enterprise' version '%s'
+                }
+                              
+                rootProject.name = 'my-project'
+                """
             )
           )
         );
@@ -111,18 +111,18 @@ class AddSettingsPluginTest implements RewriteTest {
               """,
             interpolateResolvedVersion(
               """
-              pluginManagement {
-                  repositories {
-                      gradlePluginPortal()
-                  }
-              }
+                pluginManagement {
+                    repositories {
+                        gradlePluginPortal()
+                    }
+                }
 
-              plugins {
-                  id 'com.gradle.enterprise' version '%s'
-              }
+                plugins {
+                    id 'com.gradle.enterprise' version '%s'
+                }
 
-              rootProject.name = 'my-project'
-              """
+                rootProject.name = 'my-project'
+                """
             )
           )
         );

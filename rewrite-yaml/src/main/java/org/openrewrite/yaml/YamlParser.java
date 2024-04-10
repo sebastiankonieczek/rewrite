@@ -16,12 +16,17 @@
 package org.openrewrite.yaml;
 
 import lombok.Getter;
+import lombok.Value;
 import org.intellij.lang.annotations.Language;
-import org.openrewrite.*;
+import org.openrewrite.ExecutionContext;
+import org.openrewrite.FileAttributes;
+import org.openrewrite.InMemoryExecutionContext;
+import org.openrewrite.SourceFile;
 import org.openrewrite.internal.EncodingDetectingInputStream;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.marker.Markers;
+import org.openrewrite.tree.ParseError;
 import org.openrewrite.tree.ParsingEventListener;
 import org.openrewrite.tree.ParsingExecutionContextView;
 import org.openrewrite.yaml.tree.Yaml;
@@ -34,11 +39,8 @@ import org.yaml.snakeyaml.reader.StreamReader;
 import org.yaml.snakeyaml.scanner.Scanner;
 import org.yaml.snakeyaml.scanner.ScannerImpl;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -61,18 +63,20 @@ public class YamlParser implements org.openrewrite.Parser {
     public Stream<SourceFile> parseInputs(Iterable<Input> sourceFiles, @Nullable Path relativeTo, ExecutionContext ctx) {
         ParsingEventListener parsingListener = ParsingExecutionContextView.view(ctx).getParsingListener();
         return acceptedInputs(sourceFiles)
-                .map(sourceFile -> {
-                    Path path = sourceFile.getRelativePath(relativeTo);
-                    try (EncodingDetectingInputStream is = sourceFile.getSource(ctx)) {
+                .map(input -> {
+                    parsingListener.startedParsing(input);
+                    Path path = input.getRelativePath(relativeTo);
+                    try (EncodingDetectingInputStream is = input.getSource(ctx)) {
                         Yaml.Documents yaml = parseFromInput(path, is);
-                        parsingListener.parsed(sourceFile, yaml);
-                        return yaml.withFileAttributes(sourceFile.getFileAttributes());
+                        parsingListener.parsed(input, yaml);
+                        yaml = yaml.withFileAttributes(input.getFileAttributes());
+                        yaml = unwrapPrefixedMappings(yaml);
+                        return requirePrintEqualsInput(yaml, input, relativeTo, ctx);
                     } catch (Throwable t) {
                         ctx.getOnError().accept(t);
-                        return ParseError.build(this, sourceFile, relativeTo, ctx, t);
+                        return ParseError.build(this, input, relativeTo, ctx, t);
                     }
                 })
-                .map(this::unwrapPrefixedMappings)
                 .map(sourceFile -> {
                     if (sourceFile instanceof Yaml.Documents) {
                         Yaml.Documents docs = (Yaml.Documents) sourceFile;
@@ -106,9 +110,7 @@ public class YamlParser implements org.openrewrite.Parser {
             yamlSourceWithVariablePlaceholders.append(yamlSource, pos, yamlSource.length());
         }
 
-        try (FormatPreservingReader reader = new FormatPreservingReader(
-                new InputStreamReader(new ByteArrayInputStream(yamlSourceWithVariablePlaceholders.toString()
-                        .getBytes(StandardCharsets.UTF_8))))) {
+        try (FormatPreservingReader reader = new FormatPreservingReader(yamlSourceWithVariablePlaceholders.toString())) {
             StreamReader streamReader = new StreamReader(reader);
             Scanner scanner = new ScannerImpl(streamReader, new LoaderOptions());
             Parser parser = new ParserImpl(scanner);
@@ -126,10 +128,17 @@ public class YamlParser implements org.openrewrite.Parser {
             for (Event event = parser.getEvent(); event != null; event = parser.getEvent()) {
                 switch (event.getEventId()) {
                     case DocumentEnd: {
-                        String fmt = newLine + reader.prefix(lastEnd, event);
-                        newLine = "";
-
                         assert document != null;
+                        if(blockStack.size() == 1 && blockStack.peek() instanceof ScalarBuilder) {
+                            // The yaml document consists of a single scalar value not in a mapping or sequence
+                            ScalarBuilder builder = (ScalarBuilder) blockStack.pop();
+                            lastEnd = builder.getLastEnd();
+                            Yaml.Scalar scalar = builder.getScalar();
+                            document = document.withBlock(scalar);
+                        }
+                        String fmt = newLine + reader.prefix(lastEnd, event);
+
+                        newLine = "";
                         documents.add(document.withEnd(new Yaml.Document.End(
                                 randomId(),
                                 fmt,
@@ -187,15 +196,40 @@ public class YamlParser implements org.openrewrite.Parser {
                         newLine = "";
 
                         ScalarEvent scalar = (ScalarEvent) event;
-                        String scalarValue = scalar.getValue();
-                        if (variableByUuid.containsKey(scalarValue)) {
-                            scalarValue = variableByUuid.get(scalarValue);
-                        }
 
                         Yaml.Anchor anchor = null;
+                        int valueStart;
                         if (scalar.getAnchor() != null) {
                             anchor = buildYamlAnchor(reader, lastEnd, fmt, scalar.getAnchor(), event.getEndMark().getIndex(), true);
                             anchors.put(scalar.getAnchor(), anchor);
+                            valueStart = lastEnd + fmt.length() + scalar.getAnchor().length() + 1 + anchor.getPostfix().length();
+                        } else {
+                            valueStart = lastEnd + fmt.length();
+                        }
+
+                        String scalarValue;
+                        switch (scalar.getScalarStyle()) {
+                            case DOUBLE_QUOTED:
+                            case SINGLE_QUOTED:
+                                scalarValue = reader.readStringFromBuffer(valueStart + 1, event.getEndMark().getIndex() - 2);
+                                break;
+                            case PLAIN:
+                                scalarValue = reader.readStringFromBuffer(valueStart, event.getEndMark().getIndex() - 1);
+                                break;
+                            case FOLDED:
+                            case LITERAL:
+                                scalarValue = reader.readStringFromBuffer(valueStart + 1, event.getEndMark().getIndex() - 1);
+                                if (scalarValue.endsWith("\n")) {
+                                    newLine = "\n";
+                                    scalarValue = scalarValue.substring(0, scalarValue.length() - 1);
+                                }
+                                break;
+                            default:
+                                scalarValue = reader.readStringFromBuffer(valueStart + 1, event.getEndMark().getIndex() - 1);
+                                break;
+                        }
+                        if (variableByUuid.containsKey(scalarValue)) {
+                            scalarValue = variableByUuid.get(scalarValue);
                         }
 
                         Yaml.Scalar.Style style;
@@ -208,21 +242,19 @@ public class YamlParser implements org.openrewrite.Parser {
                                 break;
                             case LITERAL:
                                 style = Yaml.Scalar.Style.LITERAL;
-                                scalarValue = reader.readStringFromBuffer(event.getStartMark().getIndex() + 1, event.getEndMark().getIndex() - 1);
-                                if (scalarValue.endsWith("\n")) {
-                                    newLine = "\n";
-                                    scalarValue = scalarValue.substring(0, scalarValue.length() - 1);
-                                }
                                 break;
                             case FOLDED:
                                 style = Yaml.Scalar.Style.FOLDED;
-                                scalarValue = reader.readStringFromBuffer(event.getStartMark().getIndex() + 1, event.getEndMark().getIndex() - 1);
                                 break;
                             case PLAIN:
                             default:
                                 style = Yaml.Scalar.Style.PLAIN;
+                                if (!scalarValue.startsWith("@") && event.getStartMark().getIndex() >= reader.getBufferIndex()) {
+                                    scalarValue = reader.readStringFromBuffer(event.getStartMark().getIndex(), event.getEndMark().getIndex() - 1);
+                                }
                                 break;
                         }
+                        Yaml.Scalar finalScalar = new Yaml.Scalar(randomId(), fmt, Markers.EMPTY, style, anchor, scalarValue);
                         BlockBuilder builder = blockStack.isEmpty() ? null : blockStack.peek();
                         if (builder instanceof SequenceBuilder) {
                             // Inline sequences like [1, 2] need to keep track of any whitespace between the element
@@ -233,13 +265,17 @@ public class YamlParser implements org.openrewrite.Parser {
                             String commaPrefix = null;
                             if (commaIndex != -1) {
                                 commaPrefix = betweenEvents.substring(0, commaIndex);
-
                             }
                             lastEnd = event.getEndMark().getIndex() + commaIndex + 1;
-                            sequenceBuilder.push(new Yaml.Scalar(randomId(), fmt, Markers.EMPTY, style, anchor, scalarValue), commaPrefix);
+                            sequenceBuilder.push(finalScalar, commaPrefix);
 
-                        } else if (builder != null) {
-                            builder.push(new Yaml.Scalar(randomId(), fmt, Markers.EMPTY, style, anchor, scalarValue));
+                        } else if (builder == null) {
+                            if(!"".equals(finalScalar.getValue())) {
+                                // If the "scalar" is just a comment, allow it to accrue to the Document.End rather than create a phantom scalar
+                                blockStack.push(new ScalarBuilder(finalScalar, event.getEndMark().getIndex()));
+                            }
+                        } else {
+                            builder.push(finalScalar);
                             lastEnd = event.getEndMark().getIndex();
                         }
                         break;
@@ -308,6 +344,9 @@ public class YamlParser implements org.openrewrite.Parser {
 
                         AliasEvent alias = (AliasEvent) event;
                         Yaml.Anchor anchor = anchors.get(alias.getAnchor());
+                        if (anchor == null) {
+                            throw new UnsupportedOperationException("Unknown anchor: " + alias.getAnchor());
+                        }
                         BlockBuilder builder = blockStack.peek();
                         builder.push(new Yaml.Alias(randomId(), fmt, Markers.EMPTY, anchor));
                         lastEnd = event.getEndMark().getIndex();
@@ -342,7 +381,8 @@ public class YamlParser implements org.openrewrite.Parser {
                 lastEnd + eventPrefix.length() + anchorLength, eventEndIndex);
 
         StringBuilder postFix = new StringBuilder();
-        for (char c : whitespaceAndScalar.toCharArray()) {
+        for (int i = 0; i < whitespaceAndScalar.length(); i++) {
+            char c = whitespaceAndScalar.charAt(i);
             if (c != ' ' && c != '\t') {
                 break;
             }
@@ -493,6 +533,21 @@ public class YamlParser implements org.openrewrite.Parser {
         }
     }
 
+    @Value
+    private static class ScalarBuilder implements BlockBuilder {
+        Yaml.Scalar scalar;
+        int lastEnd;
+        @Override
+        public void push(Yaml.Block block) {
+            throw new IllegalStateException("Unable to push on top of a scalar.");
+        }
+
+        @Override
+        public Yaml.Block build() {
+            return scalar;
+        }
+    }
+
     @Getter
     private static class MappingWithPrefix extends Yaml.Mapping {
         private String prefix;
@@ -525,10 +580,7 @@ public class YamlParser implements org.openrewrite.Parser {
         }
     }
 
-    private SourceFile unwrapPrefixedMappings(SourceFile y) {
-        if (!(y instanceof Yaml.Documents)) {
-            return y;
-        }
+    private Yaml.Documents unwrapPrefixedMappings(Yaml.Documents y) {
         //noinspection ConstantConditions
         return (Yaml.Documents) new YamlIsoVisitor<Integer>() {
             @Override

@@ -15,19 +15,24 @@
  */
 package org.openrewrite.text;
 
+import lombok.EqualsAndHashCode;
+import lombok.Value;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
+import org.openrewrite.Recipe;
 import org.openrewrite.test.RewriteTest;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.openrewrite.test.SourceSpecs.text;
 
 class FindAndReplaceTest implements RewriteTest {
-
     @DocumentExample
     @Test
     void nonTxtExtension() {
         rewriteRun(
-          spec -> spec.recipe(new FindAndReplace(".", "G", null)),
+          spec -> spec.recipe(new FindAndReplace(".", "G", null, null, null, null, null)),
           text(
             """
               This is text.
@@ -41,9 +46,28 @@ class FindAndReplaceTest implements RewriteTest {
     }
 
     @Test
+    void removeWhenNullOrEmpty() {
+        rewriteRun(
+          spec -> spec.recipe(new FindAndReplace("Bar", null, null, null, null, null, null)),
+          text(
+            """
+              Foo
+              Bar
+              Quz
+              """,
+            """
+              Foo
+              
+              Quz
+              """
+          )
+        );
+    }
+
+    @Test
     void defaultNonRegex() {
         rewriteRun(
-          spec -> spec.recipe(new FindAndReplace(".", "G", null)),
+          spec -> spec.recipe(new FindAndReplace(".", "G", null, null, null, null, null)),
           text(
             """
               This is text.
@@ -58,7 +82,7 @@ class FindAndReplaceTest implements RewriteTest {
     @Test
     void regexReplace() {
         rewriteRun(
-          spec -> spec.recipe(new FindAndReplace(".", "G", true)),
+          spec -> spec.recipe(new FindAndReplace(".", "G", true, null, null, null, null)),
           text(
             """
               This is text.
@@ -73,13 +97,69 @@ class FindAndReplaceTest implements RewriteTest {
     @Test
     void captureGroups() {
         rewriteRun(
-          spec -> spec.recipe(new FindAndReplace("This is ([^.]+).", "I like $1.", true)),
+          spec -> spec.recipe(new FindAndReplace("This is ([^.]+).", "I like $1.", true, null, null, null, null)),
           text(
             """
               This is text.
               """,
             """
               I like text.
+              """
+          )
+        );
+    }
+
+    @Test
+    void noRecursive() {
+        rewriteRun(
+          spec -> spec.recipe(new FindAndReplace("test", "tested", false, null, null, null, null)),
+          text("test", "tested")
+        );
+    }
+
+    @Test
+    void dollarSignsTolerated() {
+        String find = "This is text ${dynamic}.";
+        String replace = "This is text ${dynamic}. Stuff";
+        rewriteRun(
+          spec -> spec.recipe(new FindAndReplace(find, replace, null, null, null, null, null)),
+          text(find, replace)
+        );
+    }
+
+    @Value
+    @EqualsAndHashCode(callSuper = false)
+    static class MultiFindAndReplace extends Recipe {
+
+        @Override
+        public String getDisplayName() {
+            return "Replaces \"one\" with \"two\" then \"three\" then \"four\"";
+        }
+
+        @Override
+        public String getDescription() {
+            return "Replaces \"one\" with \"two\" then \"three\" then \"four\".";
+        }
+
+        @Override
+        public List<Recipe> getRecipeList() {
+            return Arrays.asList(
+              new FindAndReplace("one", "two", null, null, null, null, null),
+              new FindAndReplace("two", "three", null, null, null, null, null),
+              new FindAndReplace("three", "four", null, null, null, null, null));
+        }
+    }
+
+    @Test
+    void successiveReplacement() {
+        rewriteRun(
+          spec -> spec.recipe(new MultiFindAndReplace()),
+          text(
+            """
+              one
+              """,
+            """
+              four
               """
           )
         );

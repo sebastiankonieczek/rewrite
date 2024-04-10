@@ -16,6 +16,7 @@
 package org.openrewrite;
 
 import org.openrewrite.internal.lang.Nullable;
+import org.openrewrite.scheduling.RecipeRunCycle;
 
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -34,6 +35,7 @@ public interface ExecutionContext {
     String CURRENT_RECIPE = "org.openrewrite.currentRecipe";
     String DATA_TABLES = "org.openrewrite.dataTables";
     String RUN_TIMEOUT = "org.openrewrite.runTimeout";
+    String REQUIRE_PRINT_EQUALS_INPUT = "org.openrewrite.requirePrintEqualsInput";
 
     @Incubating(since = "7.20.0")
     default ExecutionContext addObserver(TreeObserver.Subscription observer) {
@@ -70,6 +72,7 @@ public interface ExecutionContext {
         });
     }
 
+    @SuppressWarnings("unused")
     default <T> Set<T> putMessageInSet(String key, T value) {
         return putMessageInCollection(key, value, HashSet::new);
     }
@@ -82,11 +85,13 @@ public interface ExecutionContext {
 
     @Nullable <T> T pollMessage(String key);
 
+    @SuppressWarnings("unused")
     default <T> T pollMessage(String key, T defaultValue) {
         T t = pollMessage(key);
         return t == null ? defaultValue : t;
     }
 
+    @SuppressWarnings("unused")
     default void putCurrentRecipe(Recipe recipe) {
         putMessage(CURRENT_RECIPE, recipe);
     }
@@ -96,6 +101,10 @@ public interface ExecutionContext {
     BiConsumer<Throwable, ExecutionContext> getOnTimeout();
 
     default int getCycle() {
+        return getCycleDetails().getCycle();
+    }
+
+    default RecipeRunCycle<?> getCycleDetails() {
         return requireNonNull(getMessage(CURRENT_CYCLE));
     }
 }

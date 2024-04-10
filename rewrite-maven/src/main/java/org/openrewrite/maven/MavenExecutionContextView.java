@@ -23,8 +23,10 @@ import org.openrewrite.maven.cache.MavenPomCache;
 import org.openrewrite.maven.internal.MavenParsingException;
 import org.openrewrite.maven.tree.*;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Collections.emptyList;
 import static org.openrewrite.maven.tree.MavenRepository.MAVEN_LOCAL_DEFAULT;
@@ -38,10 +40,13 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
     private static final String MAVEN_MIRRORS = "org.openrewrite.maven.mirrors";
     private static final String MAVEN_CREDENTIALS = "org.openrewrite.maven.auth";
     private static final String MAVEN_LOCAL_REPOSITORY = "org.openrewrite.maven.localRepo";
+    private static final String MAVEN_ADD_LOCAL_REPOSITORY = "org.openrewrite.maven.useLocalRepo";
+    private static final String MAVEN_ADD_CENTRAL_REPOSITORY = "org.openrewrite.maven.useCentralRepo";
     private static final String MAVEN_REPOSITORIES = "org.openrewrite.maven.repos";
     private static final String MAVEN_PINNED_SNAPSHOT_VERSIONS = "org.openrewrite.maven.pinnedSnapshotVersions";
     private static final String MAVEN_POM_CACHE = "org.openrewrite.maven.pomCache";
     private static final String MAVEN_RESOLUTION_LISTENER = "org.openrewrite.maven.resolutionListener";
+    private static final String MAVEN_RESOLUTION_TIME = "org.openrewrite.maven.resolutionTime";
 
     public MavenExecutionContextView(ExecutionContext delegate) {
         super(delegate);
@@ -52,6 +57,15 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
             return (MavenExecutionContextView) ctx;
         }
         return new MavenExecutionContextView(ctx);
+    }
+
+    public MavenExecutionContextView recordResolutionTime(Duration time) {
+        this.computeMessage(MAVEN_RESOLUTION_TIME, time.toMillis(), () -> 0L, Long::sum);
+        return this;
+    }
+
+    public Duration getResolutionTime() {
+        return Duration.ofMillis(getMessage(MAVEN_RESOLUTION_TIME, 0L));
     }
 
     public MavenExecutionContextView setResolutionListener(ResolutionEventListener listener) {
@@ -79,10 +93,10 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
      * @return The mirrors to use for dependency resolution.
      */
     public Collection<MavenRepositoryMirror> getMirrors(@Nullable MavenSettings mavenSettings) {
-        if (mavenSettings != null) {
+        if (mavenSettings != null && !mavenSettings.equals(getSettings())) {
             return mapMirrors(mavenSettings);
         }
-        return getMessage(MAVEN_MIRRORS, emptyList());
+        return getMirrors();
     }
 
     public MavenExecutionContextView setCredentials(Collection<MavenRepositoryCredentials> credentials) {
@@ -128,6 +142,26 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
 
     public MavenRepository getLocalRepository() {
         return getMessage(MAVEN_LOCAL_REPOSITORY, MAVEN_LOCAL_DEFAULT);
+    }
+
+    public MavenExecutionContextView setAddLocalRepository(boolean useLocalRepository) {
+        putMessage(MAVEN_ADD_LOCAL_REPOSITORY, useLocalRepository);
+        return this;
+    }
+
+    @Nullable
+    public Boolean getAddLocalRepository() {
+        return getMessage(MAVEN_ADD_LOCAL_REPOSITORY, null);
+    }
+
+    public MavenExecutionContextView setAddCentralRepository(boolean useCentralRepository) {
+        putMessage(MAVEN_ADD_CENTRAL_REPOSITORY, useCentralRepository);
+        return this;
+    }
+
+    @Nullable
+    public Boolean getAddCentralRepository() {
+        return getMessage(MAVEN_ADD_CENTRAL_REPOSITORY);
     }
 
     public MavenExecutionContextView setRepositories(List<MavenRepository> repositories) {
@@ -184,11 +218,12 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
         }
 
         putMessage(MAVEN_SETTINGS, settings);
-        setActiveProfiles(Arrays.asList(activeProfiles));
+        List<String> effectiveActiveProfiles = mapActiveProfiles(settings, activeProfiles);
+        setActiveProfiles(effectiveActiveProfiles);
         setCredentials(mapCredentials(settings));
         setMirrors(mapMirrors(settings));
         setLocalRepository(settings.getMavenLocal());
-        setRepositories(mapRepositories(settings, Arrays.asList(activeProfiles)));
+        setRepositories(mapRepositories(settings, effectiveActiveProfiles));
 
         return this;
     }
@@ -196,6 +231,17 @@ public class MavenExecutionContextView extends DelegatingExecutionContext {
     @Nullable
     public MavenSettings getSettings() {
         return getMessage(MAVEN_SETTINGS, null);
+    }
+
+    private static List<String> mapActiveProfiles(MavenSettings settings, String... activeProfiles) {
+        if (settings.getActiveProfiles() == null) {
+            return Arrays.asList(activeProfiles);
+        }
+        return Stream.concat(
+                        settings.getActiveProfiles().getActiveProfiles().stream(),
+                        Arrays.stream(activeProfiles))
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private static List<MavenRepositoryCredentials> mapCredentials(MavenSettings settings) {

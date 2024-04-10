@@ -21,8 +21,21 @@ import org.openrewrite.test.RewriteTest;
 
 import static org.openrewrite.groovy.Assertions.groovy;
 
-@SuppressWarnings({"GroovyUnusedAssignment", "GrUnnecessarySemicolon"})
+@SuppressWarnings({"GroovyUnusedAssignment", "GrUnnecessarySemicolon", "UnnecessaryQualifiedReference"})
 class BinaryTest implements RewriteTest {
+
+    @SuppressWarnings("GroovyConstantConditional")
+    @Test
+    void insideParentheses() {
+        rewriteRun(
+          groovy("(1 + 1)"),
+          groovy("((1 + 1))"),
+
+          // NOT inside parentheses, but verifies the parser's
+          // test for "inside parentheses" condition
+          groovy("(1) + 1")
+        );
+    }
 
     @Test
     void equals() {
@@ -138,6 +151,15 @@ class BinaryTest implements RewriteTest {
               a ^= 1
               """
           )
+        );
+    }
+
+    @Test
+    void instanceOf() {
+        rewriteRun(
+          groovy("""
+            def isString = "" instanceof java.lang.String
+            """)
         );
     }
 }

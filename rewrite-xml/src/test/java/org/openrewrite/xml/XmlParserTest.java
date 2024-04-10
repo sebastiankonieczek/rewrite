@@ -16,13 +16,58 @@
 package org.openrewrite.xml;
 
 import org.junit.jupiter.api.Test;
+import org.openrewrite.ExecutionContext;
 import org.openrewrite.Issue;
+import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.xml.tree.Xml;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.openrewrite.test.RewriteTest.toRecipe;
 import static org.openrewrite.xml.Assertions.xml;
 
 @SuppressWarnings({"CheckDtdRefs", "CheckTagEmptyBody"})
 class XmlParserTest implements RewriteTest {
+
+    @Override
+    public void defaults(RecipeSpec spec) {
+        spec.recipe(toRecipe(
+          () -> new XmlVisitor<>() {
+              @Override
+              public Xml visitDocTypeDecl(Xml.DocTypeDecl docTypeDecl, ExecutionContext executionContext) {
+                  assertNotNull(docTypeDecl.getPrefixUnsafe(), "prefix should not be null");
+                  assertNotNull(docTypeDecl.getName(), "name should not be null");
+                  assertNotNull(docTypeDecl.getInternalSubset(), "internalSubset should not be null");
+                  assertNotNull(docTypeDecl.getBeforeTagDelimiterPrefix(), "beforeTagDelimiterPrefix should not be null");
+                  return super.visitDocTypeDecl(docTypeDecl, executionContext);
+              }
+          }
+        ));
+    }
+
+    @Test
+    void jsp() {
+        rewriteRun(
+          xml(
+            //language=html
+            """
+              <!DOCTYPE html>
+              <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+              <%@ taglib prefix="s" uri="/struts-tags" %>
+              <html lang="en">
+                <head>
+                  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+                  <title>Hello World!</title>
+                </head>
+                <body>
+                  <h2><s:property value="messageStore.message" /></h2>
+                </body>
+              </html>
+              """,
+            spec -> spec.path("index.jsp")
+          )
+        );
+    }
 
     @Issue("https://github.com/openrewrite/rewrite/issues/2189")
     @Test
@@ -276,7 +321,8 @@ class XmlParserTest implements RewriteTest {
           xml(
             """
               %s<?xml version="1.0" encoding="UTF-8"?><test></test>
-              """.formatted("\uFEFF"))
+              """.formatted("\uFEFF")
+          )
         );
     }
 
@@ -287,7 +333,8 @@ class XmlParserTest implements RewriteTest {
           xml(
             """
               <?xml version = "1.0" encoding    =   "UTF-8" standalone = "no" ?><blah></blah>
-              """)
+              """
+          )
         );
     }
 
@@ -300,7 +347,29 @@ class XmlParserTest implements RewriteTest {
               <?xml version="1.0" encoding="ISO-8859-1"?>
               <?xml-stylesheet type="text/xsl" href="/name/other?link"?>
               <blah></blah>
-              """)
+              """
+          )
+        );
+    }
+
+    @Issue("https://github.com/openrewrite/rewrite/issues/3442")
+    @Test
+    void preserveWhitespaceOnEntities() {
+        rewriteRun(
+          xml(
+            """
+              <?xml version="1.0" encoding="UTF-8"?>
+              <message><text>&lt;?xml version='1.0' encoding='UTF-8'?&gt;&#13;
+              &lt;note&gt;&#13;
+                  &lt;to&gt;Tove&lt;/to&gt;&#13;
+                  &lt;from&gt;Jani&lt;/from&gt;&#13;
+                  &lt;heading&gt;Reminder&lt;/heading&gt;&#13;
+                  &lt;body&gt;Don't forget me this weekend!&lt;/body&gt;&#13;
+              &lt;/note&gt;&#13;
+              &#13;
+              </text></message>
+              """
+          )
         );
     }
 }

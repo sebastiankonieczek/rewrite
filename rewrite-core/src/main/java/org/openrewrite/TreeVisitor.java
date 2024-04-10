@@ -200,6 +200,11 @@ public abstract class TreeVisitor<T extends Tree, P> {
     }
 
     public T visitNonNull(Tree tree, P p, Cursor parent) {
+        if (parent.getValue() instanceof Tree && ((Tree) parent.getValue()).isScope(tree)) {
+            throw new IllegalArgumentException(
+                    "The `parent` cursor must not point to the same `tree` as the tree to be visited"
+            );
+        }
         T t = visit(tree, p, parent);
         assert t != null;
         return t;
@@ -309,7 +314,7 @@ public abstract class TreeVisitor<T extends Tree, P> {
                 if (t != null && afterVisit != null) {
                     for (TreeVisitor<?, P> v : afterVisit) {
                         if (v != null) {
-                            v.setCursor(getCursor());
+                             v.setCursor(getCursor());
                             //noinspection unchecked
                             t = (T) v.visit(t, p);
                         }
@@ -361,7 +366,13 @@ public abstract class TreeVisitor<T extends Tree, P> {
         return (T2) visit(tree, p);
     }
 
-    public Markers visitMarkers(Markers markers, P p) {
+    public Markers visitMarkers(@Nullable Markers markers, P p) {
+        if (markers == null || markers == Markers.EMPTY) {
+            return Markers.EMPTY;
+        } else if (markers.getMarkers().isEmpty()) {
+            // avoid unnecessary method handle allocation
+            return markers;
+        }
         return markers.withMarkers(ListUtils.map(markers.getMarkers(), marker -> this.visitMarker(marker, p)));
     }
 
@@ -380,7 +391,7 @@ public abstract class TreeVisitor<T extends Tree, P> {
     }
 
     @SuppressWarnings("rawtypes")
-    private Class<? extends Tree> visitorTreeType(Class<? extends TreeVisitor> v) {
+    protected Class<? extends Tree> visitorTreeType(Class<? extends TreeVisitor> v) {
         for (TypeVariable<? extends Class<? extends TreeVisitor>> tp : v.getTypeParameters()) {
             for (Type bound : tp.getBounds()) {
                 if (bound instanceof Class && Tree.class.isAssignableFrom((Class<?>) bound)) {

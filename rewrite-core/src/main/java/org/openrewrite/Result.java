@@ -16,29 +16,21 @@
 package org.openrewrite;
 
 import lombok.Getter;
-import org.eclipse.jgit.diff.DiffEntry;
-import org.eclipse.jgit.diff.DiffFormatter;
-import org.eclipse.jgit.diff.RawTextComparator;
-import org.eclipse.jgit.internal.storage.dfs.DfsRepositoryDescription;
-import org.eclipse.jgit.internal.storage.dfs.InMemoryRepository;
-import org.eclipse.jgit.lib.*;
+import org.openrewrite.jgit.lib.FileMode;
 import org.openrewrite.config.RecipeDescriptor;
+import org.openrewrite.internal.InMemoryDiffEntry;
 import org.openrewrite.internal.lang.Nullable;
-import org.openrewrite.marker.Markers;
-import org.openrewrite.marker.Markup;
 import org.openrewrite.marker.RecipesThatMadeChanges;
+import org.openrewrite.marker.SearchResult;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+
+import static java.util.Objects.requireNonNull;
 
 public class Result {
     /**
@@ -84,9 +76,63 @@ public class Result {
     public Result(@Nullable SourceFile before, SourceFile after) {
         this(before, after, after.getMarkers()
                 .findFirst(RecipesThatMadeChanges.class)
-                .orElseThrow(() -> new IllegalStateException("SourceFile changed but no recipe " +
-                                                             "reported making a change"))
+                .orElseThrow(() -> new IllegalStateException(
+                        String.format(
+                                "Source file changed but no recipe " +
+                                "reported making a change. %s",
+                                explainWhatChanged(before, after)
+                        )
+                ))
                 .getRecipes());
+    }
+
+    private static String explainWhatChanged(@Nullable SourceFile before, SourceFile after) {
+        if (before == null) {
+            return String.format("A new file %s was generated but no recipe reported generating it. This is likely a bug in OpenRewrite itself.",
+                    after.getSourcePath());
+        }
+        Map<UUID, Tree> beforeTrees = new HashMap<>();
+        new TreeVisitor<Tree, Integer>() {
+            @Override
+            public @Nullable Tree visit(@Nullable Tree tree, Integer integer) {
+                if (tree != null) {
+                    beforeTrees.put(tree.getId(), tree);
+                }
+                return super.visit(tree, integer);
+            }
+        }.visit(before, 0);
+
+        SourceFile changesMarked = (SourceFile) new TreeVisitor<Tree, Integer>() {
+            @Override
+            public @Nullable Tree visit(@Nullable Tree tree, Integer p) {
+                if (tree != null &&
+                    beforeTrees.get(tree.getId()) != tree &&
+                    !subtreeChanged(tree, beforeTrees)) {
+                    return SearchResult.found(tree);
+                }
+                return super.visit(tree, p);
+            }
+        }.visitNonNull(after, 0);
+
+        String diff = diff(before.printAllTrimmed(), changesMarked.printAllTrimmed(), after.getSourcePath());
+        return "The following diff highlights the places where unexpected changes were made:\n" +
+               Arrays.stream(requireNonNull(diff).split("\n"))
+                       .map(l -> "  " + l)
+                       .collect(Collectors.joining("\n"));
+    }
+
+    private static boolean subtreeChanged(Tree root, Map<UUID, Tree> beforeTrees) {
+        return new TreeVisitor<Tree, AtomicBoolean>() {
+            @Override
+            public @Nullable Tree visit(@Nullable Tree tree, AtomicBoolean changed) {
+                if (tree != null && tree != root) {
+                    if (beforeTrees.get(tree.getId()) != tree) {
+                        changed.set(true);
+                    }
+                }
+                return super.visit(tree, changed);
+            }
+        }.reduce(root, new AtomicBoolean(false)).get();
     }
 
     /**
@@ -184,122 +230,27 @@ public class Result {
         }
     }
 
+    @Nullable
+    public static String diff(String before, String after, Path path) {
+        String diff = null;
+        try (InMemoryDiffEntry diffEntry = new InMemoryDiffEntry(
+                path,
+                path,
+                null,
+                before,
+                after,
+                Collections.emptySet(),
+                FileMode.REGULAR_FILE,
+                FileMode.REGULAR_FILE
+        )) {
+            diff = diffEntry.getDiff(Boolean.FALSE);
+        } catch (Exception ignored) {
+        }
+        return diff;
+    }
+
     @Override
     public String toString() {
         return diff();
-    }
-
-    static class InMemoryDiffEntry extends DiffEntry implements AutoCloseable {
-
-        static final AbbreviatedObjectId A_ZERO = AbbreviatedObjectId
-                .fromObjectId(ObjectId.zeroId());
-
-        private final InMemoryRepository repo;
-        private final Set<Recipe> recipesThatMadeChanges;
-
-        InMemoryDiffEntry(@Nullable Path originalFilePath, @Nullable Path filePath, @Nullable Path relativeTo, String oldSource,
-                          String newSource, Set<Recipe> recipesThatMadeChanges) {
-            this(originalFilePath, filePath, relativeTo, oldSource, newSource, recipesThatMadeChanges, FileMode.REGULAR_FILE, FileMode.REGULAR_FILE);
-        }
-
-        InMemoryDiffEntry(@Nullable Path originalFilePath, @Nullable Path filePath, @Nullable Path relativeTo, String oldSource,
-                          String newSource, Set<Recipe> recipesThatMadeChanges, FileMode oldMode, FileMode newMode) {
-
-            this.recipesThatMadeChanges = recipesThatMadeChanges;
-
-            try {
-                this.repo = new InMemoryRepository.Builder()
-                        .setRepositoryDescription(new DfsRepositoryDescription())
-                        .build();
-
-                try (ObjectInserter inserter = repo.getObjectDatabase().newInserter()) {
-
-                    if (originalFilePath != null) {
-                        this.oldId = inserter.insert(Constants.OBJ_BLOB, oldSource.getBytes(StandardCharsets.UTF_8)).abbreviate(40);
-                        this.oldMode = oldMode;
-                        this.oldPath = (relativeTo == null ? originalFilePath : relativeTo.relativize(originalFilePath)).toString().replace("\\", "/");
-                    } else {
-                        this.oldId = A_ZERO;
-                        this.oldMode = FileMode.MISSING;
-                        this.oldPath = DEV_NULL;
-                    }
-
-                    if (filePath != null) {
-                        this.newId = inserter.insert(Constants.OBJ_BLOB, newSource.getBytes(StandardCharsets.UTF_8)).abbreviate(40);
-                        this.newMode = newMode;
-                        this.newPath = (relativeTo == null ? filePath : relativeTo.relativize(filePath)).toString().replace("\\", "/");
-                    } else {
-                        this.newId = A_ZERO;
-                        this.newMode = FileMode.MISSING;
-                        this.newPath = DEV_NULL;
-                    }
-                    inserter.flush();
-                }
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-
-            if (this.oldMode == FileMode.MISSING && this.newMode != FileMode.MISSING) {
-                this.changeType = ChangeType.ADD;
-            } else if (this.oldMode != FileMode.MISSING && this.newMode == FileMode.MISSING) {
-                this.changeType = ChangeType.DELETE;
-            } else if (!oldPath.equals(newPath)) {
-                this.changeType = ChangeType.RENAME;
-            } else {
-                this.changeType = ChangeType.MODIFY;
-            }
-        }
-
-        String getDiff() {
-            return getDiff(false);
-        }
-
-        String getDiff(@Nullable Boolean ignoreAllWhitespace) {
-            if (ignoreAllWhitespace == null) {
-                ignoreAllWhitespace = false;
-            }
-
-            if (oldId.equals(newId) && oldPath.equals(newPath)) {
-                return "";
-            }
-
-            ByteArrayOutputStream patch = new ByteArrayOutputStream();
-            try (DiffFormatter formatter = new DiffFormatter(patch)) {
-                formatter.setDiffComparator(ignoreAllWhitespace ? RawTextComparator.WS_IGNORE_ALL : RawTextComparator.DEFAULT);
-                formatter.setRepository(repo);
-                formatter.format(this);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-
-            String diff = patch.toString();
-
-            AtomicBoolean addedComment = new AtomicBoolean(false);
-            // NOTE: String.lines() would remove empty lines which we don't want
-            return Arrays.stream(diff.split("\n"))
-                           .map(l -> {
-                               if (!addedComment.get() && l.startsWith("@@") && l.endsWith("@@")) {
-                                   addedComment.set(true);
-
-                                   Set<String> sortedRecipeNames = new LinkedHashSet<>();
-                                   for (Recipe recipesThatMadeChange : recipesThatMadeChanges) {
-                                       sortedRecipeNames.add(recipesThatMadeChange.getName());
-                                   }
-                                   StringJoiner joinedRecipeNames = new StringJoiner(", ", " ", "");
-                                   for (String name : sortedRecipeNames) {
-                                       joinedRecipeNames.add(name);
-                                   }
-
-                                   return l + joinedRecipeNames;
-                               }
-                               return l;
-                           })
-                           .collect(Collectors.joining("\n")) + "\n";
-        }
-
-        @Override
-        public void close() {
-            this.repo.close();
-        }
     }
 }

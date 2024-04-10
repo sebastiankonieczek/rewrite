@@ -16,6 +16,7 @@
 package org.openrewrite.java.cleanup;
 
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
 import org.openrewrite.Issue;
@@ -32,6 +33,7 @@ import java.util.function.UnaryOperator;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.test.RewriteTest.toRecipe;
 
 @SuppressWarnings({
   "UnnecessaryLocalVariable", "ConstantConditions", "UnusedAssignment", "PointlessBooleanExpression",
@@ -40,7 +42,7 @@ import static org.openrewrite.java.Assertions.java;
 class UnnecessaryParenthesesTest implements RewriteTest {
     @Override
     public void defaults(RecipeSpec spec) {
-        spec.recipe(new UnnecessaryParentheses());
+        spec.recipe(toRecipe(UnnecessaryParenthesesVisitor::new));
     }
 
     private static Consumer<RecipeSpec> unnecessaryParentheses(UnaryOperator<UnnecessaryParenthesesStyle> with) {
@@ -51,6 +53,35 @@ class UnnecessaryParenthesesTest implements RewriteTest {
               singletonList(with.apply(new UnnecessaryParenthesesStyle(false, false, false, false, false,
                 false, false, false, false, false, false, false, false, false,
                 false, false, false, false, false, false, false, false, false))))))
+        );
+    }
+
+    @SuppressWarnings({"EmptyTryBlock", "CaughtExceptionImmediatelyRethrown"})
+    @Test
+    void minimumSpaceThrow() {
+        rewriteRun(
+          java(
+            """
+              class Test {
+                  int test() {
+                      try {
+                      } catch(Exception e) {
+                          throw(e);
+                      }
+                  }
+              }
+              """,
+            """
+              class Test {
+                  int test() {
+                      try {
+                      } catch(Exception e) {
+                          throw e;
+                      }
+                  }
+              }
+              """
+          )
         );
     }
 
@@ -768,57 +799,7 @@ class UnnecessaryParenthesesTest implements RewriteTest {
         );
     }
 
-    @Test
-    void doNotUnwrapIfNoParens() {
-        rewriteRun(
-          java(
-            """
-              class Test {
-                  void test(String s) {
-                      if (s == null || s.isEmpty()) {
-                          System.out.println("empty");
-                      }
-                  }
-              }
-              """
-          )
-        );
-    }
-
-    @Test
-    void doNotUnwrapNegatedIfParens() {
-        rewriteRun(
-          java(
-            """
-              class Test {
-                  void test(String s) {
-                      if (!(s == null || s.isEmpty())) {
-                          System.out.println("empty");
-                      }
-                  }
-              }
-              """
-          )
-        );
-    }
-
-    @Test
-    void doNotUnwrapIfParens() {
-        rewriteRun(
-          java(
-            """
-              class Test {
-                  void test(String s) {
-                      if ((s == null || s.isEmpty()) || false) {
-                          System.out.println("empty");
-                      }
-                  }
-              }
-              """
-          )
-        );
-    }
-
+    @SuppressWarnings("all")
     @Test
     void unwrapWhileParens() {
         rewriteRun(
@@ -895,5 +876,179 @@ class UnnecessaryParenthesesTest implements RewriteTest {
               """
           )
         );
+    }
+
+    @Test
+    @SuppressWarnings("SimplifiableConditionalExpression")
+    void ternaryCondition() {
+        rewriteRun(
+          java(
+            """
+              class Test {
+                  boolean test(String s) {
+                      return (s == null) ? true : false;
+                  }
+              }
+              """,
+            """
+              class Test {
+                  boolean test(String s) {
+                      return s == null ? true : false;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Issue("https://github.com/openrewrite/rewrite/issues/3883")
+    @Test
+    void unwrapNotMethodInvocation() {
+        rewriteRun(
+          unnecessaryParentheses(style -> style),
+          java(
+            """
+              class Test {
+                  boolean trueMethod() {
+                      return !(falseMethod());
+                  }
+                  boolean falseMethod() {
+                      return false;
+                  }
+              }
+              """,
+            """
+              class Test {
+                  boolean trueMethod() {
+                      return !falseMethod();
+                  }
+                  boolean falseMethod() {
+                      return false;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Nested
+    class DoNotUnwrap {
+        @Test
+        @Issue("https://github.com/openrewrite/rewrite/issues/3913")
+        void negatedAssignment() {
+            rewriteRun(
+              java(
+                """
+                  class Test {
+                      void test(char ch) {
+                          boolean sign;
+                          if (!(sign = ch == '-')) {
+                              System.out.println("not signed");
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void doNotUnwrapIfNoParens() {
+            rewriteRun(
+              java(
+                """
+                  class Test {
+                      void test(String s) {
+                          if (s == null || s.isEmpty()) {
+                              System.out.println("empty");
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void doNotUnwrapNegatedIfParens() {
+            rewriteRun(
+              java(
+                """
+                  class Test {
+                      void test(String s) {
+                          if (!(s == null || s.isEmpty())) {
+                              System.out.println("empty");
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void doNotUnwrapIfParens() {
+            rewriteRun(
+              java(
+                """
+                  class Test {
+                      void test(String s) {
+                          if ((s == null || s.isEmpty()) || false) {
+                              System.out.println("empty");
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void requiredCast() {
+            rewriteRun(
+              java(
+                """
+                  class Test {
+                      int test(Object o) {
+                          return ((int[]) o).length;
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void negatedTernaryNotUnwrapped() {
+            rewriteRun(
+              java(
+                """
+                  public class A {
+                      void foo(String s, String other) {
+                          boolean a = !(s == null ? other == null : s.equalsIgnoreCase(other));
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Issue("https://github.com/openrewrite/rewrite/issues/3904")
+        @Test
+        void negatedInstanceOf() {
+            rewriteRun(
+              unnecessaryParentheses(style -> style),
+              java(
+                """
+                  class Test {
+                      boolean isNotString(Object o) {
+                          return !(o instanceof String);
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
     }
 }

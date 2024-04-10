@@ -27,10 +27,11 @@ import org.openrewrite.marker.Markers;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import static java.util.Collections.emptyList;
 import static org.openrewrite.Tree.randomId;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class ChangeMethodTargetToStatic extends Recipe {
 
     /**
@@ -141,13 +142,15 @@ public class ChangeMethodTargetToStatic extends Recipe {
                                             Space.EMPTY :
                                             method.getSelect().getPrefix(),
                                     Markers.EMPTY,
+                                    emptyList(),
                                     classType.getClassName(),
                                     classType,
                                     null
                             )
                     );
                 }
-                m = m.withMethodType(transformedType);
+                m = m.withMethodType(transformedType)
+                        .withName(m.getName().withType(transformedType));
             }
             return m;
         }

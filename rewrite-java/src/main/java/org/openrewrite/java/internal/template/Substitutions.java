@@ -23,10 +23,12 @@ import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.internal.grammar.TemplateParameterLexer;
 import org.openrewrite.java.internal.grammar.TemplateParameterParser;
+import org.openrewrite.java.internal.grammar.TemplateParameterParser.TypeContext;
 import org.openrewrite.java.tree.*;
 
+import java.util.HashMap;
 import java.util.List;
-import java.util.StringJoiner;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,14 +43,13 @@ public class Substitutions {
             "#{", "}", null);
 
     public String substitute() {
+        AtomicInteger requiredParameters = new AtomicInteger(0);
         AtomicInteger index = new AtomicInteger(0);
         String substituted = code;
         while (true) {
+            Map<String, String> typedPatternByName = new HashMap<>();
             String previous = substituted;
             substituted = propertyPlaceholderHelper.replacePlaceholders(substituted, key -> {
-                int i = index.getAndIncrement();
-                Object parameter = parameters[i];
-
                 String s;
                 if (!key.isEmpty()) {
                     TemplateParameterParser parser = new TemplateParameterParser(new CommonTokenStream(new TemplateParameterLexer(
@@ -58,73 +59,26 @@ public class Substitutions {
                     parser.addErrorListener(new ThrowingErrorListener());
 
                     TemplateParameterParser.MatcherPatternContext ctx = parser.matcherPattern();
-                    String matcherName = ctx.matcherName().Identifier().getText();
-                    List<TemplateParameterParser.MatcherParameterContext> params = ctx.matcherParameter();
-
-                    if ("anyArray".equals(matcherName)) {
-                        if (!(parameter instanceof TypedTree)) {
-                            throw new IllegalArgumentException("anyArray can only be used on TypedTree parameters");
+                    TemplateParameterParser.TypedPatternContext typedPattern = ctx.typedPattern();
+                    if (typedPattern == null) {
+                        String paramName = ctx.parameterName().Identifier().getText();
+                        s = typedPatternByName.get(paramName);
+                        if (s == null) {
+                            throw new IllegalArgumentException("The parameter " + paramName + " must be defined before it is referenced.");
                         }
-
-                        JavaType type = ((TypedTree) parameter).getType();
-                        JavaType.Array arrayType = TypeUtils.asArray(type);
-                        if (arrayType == null) {
-                            arrayType = TypeUtils.asArray(type);
-                            if (arrayType == null) {
-                                throw new IllegalArgumentException("anyArray can only be used on parameters containing JavaType.Array type attribution");
-                            }
-                        }
-
-                        s = "(/*__p" + i + "__*/new ";
-
-                        StringBuilder extraDim = new StringBuilder();
-                        for (; arrayType.getElemType() instanceof JavaType.Array; arrayType = (JavaType.Array) arrayType.getElemType()) {
-                            extraDim.append("[0]");
-                        }
-
-                        if (arrayType.getElemType() instanceof JavaType.Primitive) {
-                            s += ((JavaType.Primitive) arrayType.getElemType()).getKeyword();
-                        } else if (arrayType.getElemType() instanceof JavaType.FullyQualified) {
-                            s += ((JavaType.FullyQualified) arrayType.getElemType()).getFullyQualifiedName().replace("$", ".");
-                        }
-
-                        s += "[0]" + extraDim + ")";
-                    } else if ("any".equals(matcherName)) {
-                        String fqn;
-
-                        if (params.size() == 1) {
-                            if(params.get(0).Identifier() != null) {
-                                fqn = params.get(0).Identifier().getText();
-                            } else {
-                                fqn = params.get(0).FullyQualifiedName().getText();
-                            }
-                        } else {
-                            if (parameter instanceof J.NewClass && ((J.NewClass) parameter).getBody() != null
-                                    && ((J.NewClass) parameter).getClazz() != null) {
-                                // for anonymous classes get the type from the supertype
-                                fqn = getTypeName(((J.NewClass) parameter).getClazz().getType());
-                            } else if (!(parameter instanceof TypedTree)) {
-                                // any should only be used on TypedTree parameters, but will give it best effort
-                                fqn = "java.lang.Object";
-                            } else {
-                                fqn = getTypeName(((TypedTree) parameter).getType());
-                            }
-                        }
-
-                        fqn = fqn.replace("$", ".");
-
-                        JavaType.Primitive primitive = JavaType.Primitive.fromKeyword(fqn);
-                        s = "__P__." + (primitive == null || primitive.equals(JavaType.Primitive.String) ?
-                                "<" + fqn + ">/*__p" + i + "__*/p()" :
-                                "/*__p" + i + "__*/" + fqn + "p()"
-                        );
-
-                        parameters[i] = ((J) parameter).withPrefix(Space.EMPTY);
                     } else {
-                        throw new IllegalArgumentException("Invalid template matcher '" + key + "'");
+                        int i = index.getAndIncrement();
+                        s = substituteTypedPattern(key, i, typedPattern);
+                        if (ctx.typedPattern().parameterName() != null) {
+                            String paramName = ctx.typedPattern().parameterName().Identifier().getText();
+                            typedPatternByName.put(paramName, s);
+                        }
+                        requiredParameters.incrementAndGet();
                     }
                 } else {
-                    s = substituteUntyped(parameter, i);
+                    int i = index.getAndIncrement();
+                    s = substituteUntyped(parameters[i], i);
+                    requiredParameters.incrementAndGet();
                 }
 
                 return s;
@@ -135,27 +89,105 @@ public class Substitutions {
             }
         }
 
+        if (parameters.length != requiredParameters.get()) {
+            throw new IllegalArgumentException("This template requires " + requiredParameters.get() + " parameters.");
+        }
+
         return substituted;
     }
 
-    private String getTypeName(@Nullable JavaType type) {
-        if (type instanceof JavaType.Parameterized) {
-            StringJoiner joiner = new StringJoiner(",", "<", ">");
-            for (JavaType parameter : ((JavaType.Parameterized) type).getTypeParameters()) {
-                joiner.add(getTypeName(parameter));
+    private String substituteTypedPattern(String key, int index, TemplateParameterParser.TypedPatternContext typedPattern) {
+        Object parameter = parameters[index];
+        String s;
+        String matcherName = typedPattern.patternType().matcherName().Identifier().getText();
+        TypeContext param = typedPattern.patternType().type();
+
+        if ("anyArray".equals(matcherName)) {
+            if (!(parameter instanceof TypedTree)) {
+                throw new IllegalArgumentException("anyArray can only be used on TypedTree parameters");
             }
-            return ((JavaType.Parameterized) type).getFullyQualifiedName() + joiner;
-        } else if (type instanceof JavaType.GenericTypeVariable) {
-            return ((JavaType.GenericTypeVariable) type).getName();
-        } else if (type instanceof JavaType.FullyQualified) {
-            return ((JavaType.FullyQualified) type).getFullyQualifiedName();
-        } else if (type instanceof JavaType.Primitive) {
-            return ((JavaType.Primitive) type).getKeyword();
-        } else if (type instanceof JavaType.Array) {
-            return getTypeName(((JavaType.Array) type).getElemType()) + "[]";
+
+            JavaType type = ((TypedTree) parameter).getType();
+            if (type == null && parameter instanceof J.Empty && ((J.Empty) parameter).getMarkers().findFirst(TemplateParameter.class).isPresent()) {
+                // this is a hack, but since we currently represent template parameters as `J.Empty`, this is the only way to get the type now
+                type = ((J.Empty) parameter).getMarkers().findFirst(TemplateParameter.class).get().getType();
+            }
+            JavaType.Array arrayType = TypeUtils.asArray(type);
+            if (arrayType == null) {
+                arrayType = TypeUtils.asArray(type);
+                if (arrayType == null) {
+                    throw new IllegalArgumentException("anyArray can only be used on parameters containing JavaType.Array type attribution");
+                }
+            }
+
+            int dimensions = 1;
+            for (; arrayType.getElemType() instanceof JavaType.Array; arrayType = (JavaType.Array) arrayType.getElemType()) {
+                dimensions++;
+            }
+
+            s = "(" + newArrayParameter(arrayType.getElemType(), dimensions, index) + ")";
+        } else if ("any".equals(matcherName)) {
+            JavaType type;
+            if (param != null) {
+                type = TypeParameter.toFullyQualifiedName(param);
+            } else {
+                if (parameter instanceof J.NewClass && ((J.NewClass) parameter).getBody() != null
+                    && ((J.NewClass) parameter).getClazz() != null) {
+                    // for anonymous classes get the type from the supertype
+                    type = ((J.NewClass) parameter).getClazz().getType();
+                } else if (parameter instanceof TypedTree) {
+                    type = ((TypedTree) parameter).getType();
+                } else {
+                    type = null;
+                }
+            }
+
+            String fqn = getTypeName(type);
+            JavaType.Primitive primitive = JavaType.Primitive.fromKeyword(fqn);
+            s = primitive == null || primitive.equals(JavaType.Primitive.String) ?
+                    newObjectParameter(fqn, index) :
+                    newPrimitiveParameter(fqn, index);
+
+            parameters[index] = ((J) parameter).withPrefix(Space.EMPTY);
         } else {
-            return "java.lang.Object";
+            throw new IllegalArgumentException("Invalid template matcher '" + key + "'");
         }
+        return s;
+    }
+
+    protected String newObjectParameter(String fqn, int index) {
+        return "__P__." + "<" + fqn + ">/*__p" + index + "__*/p()";
+    }
+
+    protected String newPrimitiveParameter(String fqn, int index) {
+        return "__P__./*__p" + index + "__*/" + fqn + "p()";
+    }
+
+    protected String newArrayParameter(JavaType elemType, int dimensions, int index) {
+        StringBuilder builder = new StringBuilder("/*__p" + index + "__*/" + "new ");
+        if (elemType instanceof JavaType.Primitive) {
+            builder.append(((JavaType.Primitive) elemType).getKeyword());
+        } else if (elemType instanceof JavaType.FullyQualified) {
+            builder.append(((JavaType.FullyQualified) elemType).getFullyQualifiedName().replace("$", "."));
+        }
+        for (int i = 0; i < dimensions; i++) {
+            builder.append("[0]");
+        }
+        return builder.toString();
+    }
+
+    private String getTypeName(@Nullable JavaType type) {
+        if (type == null) {
+            return "java.lang.Object";
+        } else if (type instanceof JavaType.GenericTypeVariable) {
+            JavaType.GenericTypeVariable genericTypeVariable = (JavaType.GenericTypeVariable) type;
+            if (genericTypeVariable.getName().equals("?")) {
+                // wildcards cannot be used as type parameters on method invocations
+                return "java.lang.Object";
+            }
+            return TypeUtils.toString(type);
+        }
+        return TypeUtils.toString(type).replace("$", ".");
     }
 
     private String substituteUntyped(Object parameter, int index) {
@@ -169,7 +201,7 @@ public class Substitutions {
                 return ((J) parameter).printTrimmed();
             } else {
                 throw new IllegalArgumentException("Template parameter " + index + " cannot be used in an untyped template substitution. " +
-                        "Instead of \"#{}\", indicate the template parameter's type with \"#{any(" + typeHintFor(parameter) + ")}\".");
+                                                   "Instead of \"#{}\", indicate the template parameter's type with \"#{any(" + typeHintFor(parameter) + ")}\".");
             }
         } else if (parameter instanceof JRightPadded) {
             return substituteUntyped(((JRightPadded<?>) parameter).getElement(), index);
@@ -180,7 +212,7 @@ public class Substitutions {
     }
 
     private static String typeHintFor(Object j) {
-        if(j instanceof TypedTree) {
+        if (j instanceof TypedTree) {
             return typeHintFor(((TypedTree) j).getType());
         }
         return "";

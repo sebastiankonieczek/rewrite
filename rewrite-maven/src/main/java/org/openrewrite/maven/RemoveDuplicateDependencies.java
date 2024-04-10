@@ -34,7 +34,7 @@ import java.time.Duration;
 import java.util.*;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class RemoveDuplicateDependencies extends Recipe {
 
     @Override
@@ -56,7 +56,7 @@ public class RemoveDuplicateDependencies extends Recipe {
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         return Preconditions.check(new MavenIsoVisitor<ExecutionContext>() {
             @Override
-            public Xml.Document visitDocument(Xml.Document document, ExecutionContext executionContext) {
+            public Xml.Document visitDocument(Xml.Document document, ExecutionContext ctx) {
                 Xml.Tag root = document.getRoot();
                 if (root.getChild("dependencies").isPresent() || root.getChild("dependencyManagement").isPresent()) {
                     return SearchResult.found(document);

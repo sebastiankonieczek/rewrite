@@ -24,10 +24,10 @@ import org.openrewrite.yaml.tree.Yaml;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class DeleteKey extends Recipe {
     @Option(displayName = "Key path",
-            description = "A JsonPath expression to locate a YAML entry.",
+            description = "A [JsonPath](https://github.com/json-path/JsonPath) expression to locate a YAML entry.",
             example = "$.source.kind")
     String keyPath;
 
@@ -46,12 +46,12 @@ public class DeleteKey extends Recipe {
         JsonPathMatcher matcher = new JsonPathMatcher(keyPath);
         return new YamlIsoVisitor<ExecutionContext>() {
             @Override
-            public Yaml.Sequence.Entry visitSequenceEntry(Yaml.Sequence.Entry entry, ExecutionContext executionContext) {
+            public Yaml.Sequence.Entry visitSequenceEntry(Yaml.Sequence.Entry entry, ExecutionContext ctx) {
                 if (matcher.matches(getCursor()) || matcher.matches(new Cursor(getCursor(), entry.getBlock()))) {
                     //noinspection ConstantConditions
                     return null;
                 }
-                return super.visitSequenceEntry(entry, executionContext);
+                return super.visitSequenceEntry(entry, ctx);
             }
 
             @Override

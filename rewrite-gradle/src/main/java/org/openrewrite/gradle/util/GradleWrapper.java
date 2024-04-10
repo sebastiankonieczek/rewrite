@@ -21,9 +21,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import lombok.Value;
 import org.openrewrite.*;
+import org.openrewrite.internal.StringUtils;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.ipc.http.HttpSender;
 import org.openrewrite.remote.Remote;
+import org.openrewrite.semver.LatestRelease;
 import org.openrewrite.semver.Semver;
 import org.openrewrite.semver.VersionComparator;
 
@@ -36,45 +38,34 @@ import java.util.Arrays;
 import java.util.List;
 
 import static java.util.Objects.requireNonNull;
+import static org.openrewrite.internal.StringUtils.formatUriForPropertiesFile;
 
 @Value
 public class GradleWrapper {
-    public static final Path WRAPPER_JAR_LOCATION = Paths.get("gradle/wrapper/gradle-wrapper.jar");
-    public static final Path WRAPPER_PROPERTIES_LOCATION = Paths.get("gradle/wrapper/gradle-wrapper.properties");
-    public static final Path WRAPPER_SCRIPT_LOCATION = Paths.get("gradlew");
-    public static final Path WRAPPER_BATCH_LOCATION = Paths.get("gradlew.bat");
+    public static final String WRAPPER_JAR_LOCATION_RELATIVE_PATH = "gradle/wrapper/gradle-wrapper.jar";
+    public static final String WRAPPER_PROPERTIES_LOCATION_RELATIVE_PATH = "gradle/wrapper/gradle-wrapper.properties";
+    public static final String WRAPPER_SCRIPT_LOCATION_RELATIVE_PATH = "gradlew";
+    public static final String WRAPPER_BATCH_LOCATION_RELATIVE_PATH = "gradlew.bat";
+
+    public static final Path WRAPPER_JAR_LOCATION = Paths.get(WRAPPER_JAR_LOCATION_RELATIVE_PATH);
+    public static final Path WRAPPER_PROPERTIES_LOCATION = Paths.get(WRAPPER_PROPERTIES_LOCATION_RELATIVE_PATH);
+    public static final Path WRAPPER_SCRIPT_LOCATION = Paths.get(WRAPPER_SCRIPT_LOCATION_RELATIVE_PATH);
+    public static final Path WRAPPER_BATCH_LOCATION = Paths.get(WRAPPER_BATCH_LOCATION_RELATIVE_PATH);
 
     String version;
     DistributionInfos distributionInfos;
 
-    public static Validated<GradleWrapper> validate(
-            ExecutionContext ctx,
-            String version,
-            @Nullable String distribution,
-            @Nullable String repositoryUrl
-    ) {
-        String distributionTypeName = distribution != null && !distribution.isEmpty() ? distribution : DistributionType.Bin.name().toLowerCase();
-        Validated<Object> validated =
-                Validated
-                        .testNone("distributionType", "must be a valid distribution type", distributionTypeName,
-                                dt -> Arrays.stream(DistributionType.values())
-                                        .anyMatch(type -> type.name().equalsIgnoreCase(dt)))
-                        .and(Semver.validate(version, null));
-        if (validated.isInvalid()) {
-            return validated.asInvalid();
-        }
-        HttpSender httpSender = HttpSenderExecutionContextView.view(ctx).getHttpSender();
-        return Validated.lazy("", () -> create(distributionTypeName, version, repositoryUrl, httpSender));
-    }
-
-    private static GradleWrapper create(String distributionTypeName, String version, @Nullable String repositoryUrl, HttpSender httpSender) {
+    public static GradleWrapper create(@Nullable String distributionTypeName, @Nullable String version, @Nullable String repositoryUrl, ExecutionContext ctx) {
         DistributionType distributionType = Arrays.stream(DistributionType.values())
                 .filter(dt -> dt.name().equalsIgnoreCase(distributionTypeName))
                 .findAny()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown distribution type " + distributionTypeName));
-        VersionComparator versionComparator = requireNonNull(Semver.validate(version, null).getValue());
+                .orElse(DistributionType.Bin);
+        VersionComparator versionComparator = StringUtils.isBlank(version) ?
+                new LatestRelease(null) :
+                requireNonNull(Semver.validate(version, null).getValue());
 
-        String gradleVersionsUrl = (repositoryUrl == null) ? "https://services.gradle.org/versions/all" : repositoryUrl;
+        HttpSender httpSender = HttpSenderExecutionContextView.view(ctx).getLargeFileHttpSender();
+        String gradleVersionsUrl = StringUtils.isBlank(repositoryUrl) ? "https://services.gradle.org/versions/all" : repositoryUrl;
         try (HttpSender.Response resp = httpSender.send(httpSender.get(gradleVersionsUrl).build())) {
             if (resp.isSuccessful()) {
                 List<GradleVersion> allVersions = new ObjectMapper()
@@ -101,7 +92,7 @@ public class GradleWrapper {
     }
 
     public String getPropertiesFormattedUrl() {
-        return getDistributionUrl().replaceAll("(?<!\\\\)://", "\\\\://");
+        return formatUriForPropertiesFile(getDistributionUrl());
     }
 
     public Checksum getDistributionChecksum() {
@@ -110,11 +101,32 @@ public class GradleWrapper {
 
     static final FileAttributes WRAPPER_JAR_FILE_ATTRIBUTES = new FileAttributes(null, null, null, true, true, false, 0);
 
-    public Remote asRemote() {
+    public Remote wrapperJar() {
         return Remote.builder(
                 WRAPPER_JAR_LOCATION,
                 URI.create(distributionInfos.getDownloadUrl())
-        ).build("gradle-[^\\/]+\\/(?:.*\\/)+gradle-wrapper-(?!shared).*\\.jar", "gradle-wrapper.jar");
+        ).build("gradle-[^\\/]+\\/(?:.*\\/)+gradle-(plugins|wrapper)-(?!shared).*\\.jar", "gradle-wrapper.jar");
+    }
+
+    public Remote wrapperJar(SourceFile before) {
+        return Remote.builder(
+                before,
+                URI.create(distributionInfos.getDownloadUrl())
+        ).build("gradle-[^\\/]+\\/(?:.*\\/)+gradle-(plugins|wrapper)-(?!shared).*\\.jar", "gradle-wrapper.jar");
+    }
+
+    public Remote gradlew() {
+        return Remote.builder(
+                WRAPPER_SCRIPT_LOCATION,
+                URI.create(distributionInfos.getDownloadUrl())
+        ).build("gradle-[^\\/]+/(?:.*/)+gradle-plugins-.*\\.jar", "org/gradle/api/internal/plugins/unixStartScript.txt");
+    }
+
+    public Remote gradlewBat() {
+        return Remote.builder(
+                WRAPPER_BATCH_LOCATION,
+                URI.create(distributionInfos.getDownloadUrl())
+        ).build("gradle-[^\\/]+/(?:.*/)+gradle-plugins-.*\\.jar", "org/gradle/api/internal/plugins/windowsStartScript.txt");
     }
 
     public enum DistributionType {

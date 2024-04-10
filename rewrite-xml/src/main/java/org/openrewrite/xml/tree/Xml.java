@@ -17,14 +17,17 @@ package org.openrewrite.xml.tree;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import org.apache.commons.text.StringEscapeUtils;
 import org.intellij.lang.annotations.Language;
 import org.openrewrite.*;
+import org.openrewrite.internal.WhitespaceValidationService;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.marker.Markers;
 import org.openrewrite.xml.XmlParser;
 import org.openrewrite.xml.XmlVisitor;
 import org.openrewrite.xml.internal.WithPrefix;
 import org.openrewrite.xml.internal.XmlPrinter;
+import org.openrewrite.xml.internal.XmlWhitespaceValidationService;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -155,6 +158,15 @@ public interface Xml extends Tree {
         public <P> TreeVisitor<?, PrintOutputCapture<P>> printer(Cursor cursor) {
             return new XmlPrinter<>();
         }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <S, T extends S> T service(Class<S> service) {
+            if (WhitespaceValidationService.class.getName().equals(service.getName())) {
+                return (T) new XmlWhitespaceValidationService();
+            }
+            return SourceFile.super.service(service);
+        }
     }
 
     @Value
@@ -180,6 +192,8 @@ public interface Xml extends Tree {
         XmlDecl xmlDecl;
 
         List<Misc> misc;
+
+        List<JspDirective> jspDirectives;
 
         @Override
         public <P> Xml acceptXml(XmlVisitor<P> v, P p) {
@@ -358,11 +372,14 @@ public interface Xml extends Tree {
             if (content == null) {
                 return Optional.empty();
             }
-            if (content.size() != 1) {
-                return Optional.empty();
-            }
-            if (content.get(0) instanceof Xml.CharData) {
+            if (content.size() == 1 && content.get(0) instanceof Xml.CharData) {
                 return Optional.ofNullable(((CharData) content.get(0)).getText());
+            }
+            if (content.stream().allMatch(c -> c instanceof Xml.CharData)) {
+                return Optional.of(content.stream()
+                        .map(c -> ((CharData) c).getText())
+                        .map(StringEscapeUtils::unescapeXml)
+                        .collect(Collectors.joining()));
             }
             return Optional.empty();
         }
@@ -597,6 +614,11 @@ public interface Xml extends Tree {
         public <P> Xml acceptXml(XmlVisitor<P> v, P p) {
             return v.visitComment(this, p);
         }
+
+        @Override
+        public String toString() {
+            return "<!--" + text + "-->";
+        }
     }
 
     @Value
@@ -618,7 +640,10 @@ public interface Xml extends Tree {
 
         Markers markers;
         Ident name;
+
+        @Nullable
         Ident externalId;
+
         List<Ident> internalSubset;
 
         @Nullable
@@ -715,6 +740,58 @@ public interface Xml extends Tree {
         @Override
         public String toString() {
             return "Ident{" + name + "}";
+        }
+    }
+
+    @Value
+    @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
+    class JspDirective implements Xml, Content {
+        @EqualsAndHashCode.Include
+        @With
+        UUID id;
+
+        @With
+        String prefixUnsafe;
+
+        public JspDirective withPrefix(String prefix) {
+            return WithPrefix.onlyIfNotEqual(this, prefix);
+        }
+
+        public String getPrefix() {
+            return prefixUnsafe;
+        }
+
+        @With
+        Markers markers;
+
+        @With
+        String beforeTypePrefix;
+
+        String type;
+
+        public JspDirective withType(String type) {
+            return new JspDirective(id, prefixUnsafe, markers, beforeTypePrefix, type, attributes,
+                    beforeDirectiveEndPrefix);
+        }
+
+        @With
+        List<Attribute> attributes;
+
+        /**
+         * Space before '%&gt;'
+         */
+        @With
+        String beforeDirectiveEndPrefix;
+
+        @Override
+        public <P> Xml acceptXml(XmlVisitor<P> v, P p) {
+            return v.visitJspDirective(this, p);
+        }
+
+        @Override
+        public String toString() {
+            return "<%@ " + type + attributes.stream().map(a -> " " + a.getKey().getName() + "=\"" + a.getValueAsString() + "\"")
+                    .collect(Collectors.joining("")) + "%>";
         }
     }
 }

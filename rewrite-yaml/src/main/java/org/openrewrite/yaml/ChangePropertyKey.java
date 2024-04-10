@@ -43,11 +43,11 @@ import static org.openrewrite.Tree.randomId;
  * interprets application.yml files.
  */
 @Value
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = false)
 public class ChangePropertyKey extends Recipe {
 
     @Option(displayName = "Old property key",
-            description = "The property key to rename. Supports glob",
+            description = "The property key to rename. Supports glob patterns.",
             example = "management.metrics.binders.*.enabled")
     String oldPropertyKey;
 
@@ -58,7 +58,7 @@ public class ChangePropertyKey extends Recipe {
 
     @Option(displayName = "Use relaxed binding",
             description = "Whether to match the `oldPropertyKey` using [relaxed binding](https://docs.spring.io/spring-boot/docs/2.5.6/reference/html/features.html#features.external-config.typesafe-configuration-properties.relaxed-binding) " +
-                    "rules. Default is `true`. Set to `false`  to use exact matching.",
+                    "rules. Defaults to `true`. If you want to use exact matching in your search, set this to `false`.",
             required = false)
     @Nullable
     Boolean relaxedBinding;
@@ -75,10 +75,13 @@ public class ChangePropertyKey extends Recipe {
     }
 
     @Override
+    public String getInstanceNameSuffix() {
+        return String.format("`%s` to `%s`", oldPropertyKey, newPropertyKey);
+    }
+
+    @Override
     public String getDescription() {
-        return "Change a YAML property key leaving the value intact. Nested YAML mappings are " +
-                "interpreted as dot separated property names, i.e. as Spring Boot interprets " +
-                "application.yml files.";
+        return "Change a YAML property key while leaving the value intact. Expects dot notation for nested YAML mappings, similar to how Spring Boot interprets `application.yml` files.";
     }
 
     @Override
